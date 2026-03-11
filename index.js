@@ -360,26 +360,7 @@ client.once('ready', async () => {
   if (!GUILD_ID)    { console.error('FATAL: GUILD_ID env var is not set!'); process.exit(1); }
   if (!JSONBIN_KEY) { console.error('FATAL: JSONBIN_KEY env var is not set!'); process.exit(1); }
 
-  // Register slash commands with a 30s timeout guard
-  const regTimeout = setTimeout(() => {
-    console.error('SLASH REG TIMED OUT after 30s — Discord API unreachable?');
-  }, 30_000);
-
-  try {
-    console.log(`Registering ${slashDefs.length} slash commands to guild ${GUILD_ID}...`);
-    const rest = new REST({ version: '10' }).setToken(process.env.BOT_TOKEN);
-    const data = await rest.put(
-      Routes.applicationGuildCommands(client.user.id, GUILD_ID),
-      { body: slashDefs }
-    );
-    clearTimeout(regTimeout);
-    console.log(`SUCCESS: Registered ${data.length} slash commands!`);
-  } catch (err) {
-    clearTimeout(regTimeout);
-    console.error('SLASH REG ERROR status:', err.status);
-    console.error('SLASH REG ERROR message:', err.message);
-    console.error('SLASH REG ERROR body:', JSON.stringify(err.rawError ?? err.body ?? err, null, 2));
-  }
+  // Commands are registered via register-commands.js — run that locally once
 
   try { await dbRead('users'); console.log('Users cache warmed'); } catch (e) { console.error('Warmup error:', e.message); }
   await updateStockEmbed(client);
