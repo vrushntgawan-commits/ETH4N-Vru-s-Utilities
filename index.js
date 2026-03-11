@@ -10,6 +10,8 @@ require('dotenv').config();
 //  CONFIG
 // ══════════════════════════════════════════
 const STOCK_CHANNEL_ID = '1481026325178220565';
+const VOUCH_CHANNEL_ID = '1481321672970735807';
+const ALERT_CHANNEL_ID = '1480833457604268154';
 const GUILD_ID         = process.env.GUILD_ID;
 const JSONBIN_KEY      = process.env.JSONBIN_KEY;
 const PREFIX           = 'u!';
@@ -23,6 +25,12 @@ const COIN_EMOJI = '<:CoinEmoji:1481246827448766526>';
 const CODES = {
   'RELEASE': { coins: 25, description: '🎉 Launch reward' },
 };
+
+// ══════════════════════════════════════════
+//  PENDING VOUCHES
+//  Map<userId, { claimId, itemName, fulfilledBy, timeout }>
+// ══════════════════════════════════════════
+const pendingVouches = new Map();
 
 // ══════════════════════════════════════════
 //  SHOP
@@ -365,6 +373,19 @@ client.once('ready', async () => {
 // ══════════════════════════════════════════
 client.on('messageCreate', async msg => {
   if (msg.author.bot || !msg.guild) return;
+
+  // ── Vouch channel listener ──
+  if (msg.channel.id === VOUCH_CHANNEL_ID && pendingVouches.has(msg.author.id)) {
+    // Valid vouch format: "Vouch @user <reason>" (case-insensitive, mentions or plain @name)
+    const vouchMatch = msg.content.match(/^vouch\s+@\S+\s+.+/i);
+    if (vouchMatch) {
+      const data = pendingVouches.get(msg.author.id);
+      clearTimeout(data.timeout);
+      pendingVouches.delete(msg.author.id);
+      // React to confirm
+      try { await msg.react('✅'); } catch {}
+    }
+  }
 
   // Spam check — runs on every real human message
   await handleSpamCheck(msg);
@@ -869,19 +890,73 @@ client.on('interactionCreate', async interaction => {
         dmSent = true;
       } catch (e) { console.error('DM failed:', e.message); }
 
-      // Also notify the claimer publicly in the channel if possible
+      // Notify claimer publicly in the channel
       try {
         await interaction.channel.send({ embeds: [new EmbedBuilder()
           .setColor(0x57F287)
           .setTitle('🎉 Claim Fulfilled!')
           .setDescription(
-            `<@${claim.userId}> your claim **${claimId}** for **${claim.itemName}** has been fulfilled by <@${me.id}>!
-` +
+            `<@${claim.userId}> your claim **${claimId}** for **${claim.itemName}** has been fulfilled by <@${me.id}>!\n` +
             (claim.category === 'Robux'
               ? `Check your Roblox gamepass — the Robux have been sent!`
               : `Accept the friend request from **vru4447** on Roblox to receive your reward!`)
           )] });
       } catch { /* no channel access */ }
+
+      // Send vouch request to the vouch channel
+      try {
+        const vouchCh = await client.channels.fetch(VOUCH_CHANNEL_ID);
+        if (vouchCh) {
+          await vouchCh.send({
+            content: `<@${claim.userId}>`,
+            embeds: [new EmbedBuilder()
+              .setColor(0x5865F2)
+              .setTitle('⭐ Please Leave a Vouch!')
+              .setDescription(
+                `Hey <@${claim.userId}>! You just received **${claim.itemName}** — we hope everything went smoothly! 🎉\n\n` +
+                `Please leave a vouch so others know we're legit!\n\n` +
+                `**Format:**\n\`Vouch @${me.username} <your reason>\``
+              )
+              .setFooter({ text: `Claim ${claimId} · Fulfilled by ${me.username}` })] });
+
+          // Set a 10-minute timer — if they haven't vouched, DM them + alert channel
+          const vouchTimeout = setTimeout(async () => {
+            pendingVouches.delete(claim.userId);
+            // DM the user
+            try {
+              const vouchTarget = await client.users.fetch(claim.userId);
+              await vouchTarget.send({ embeds: [new EmbedBuilder()
+                .setColor(0xFEE75C)
+                .setTitle('⭐ Dont forget to vouch!')
+                .setDescription(
+                  `You received **${claim.itemName}** but haven't left a vouch yet!\n\n` +
+                  `Head to <#${VOUCH_CHANNEL_ID}> and type:\n\`Vouch @${me.username} <your reason>\`\n\n` +
+                  `It only takes a second and helps the community a lot! 🙏`
+                )] });
+            } catch { /* DMs closed */ }
+            // Alert the admin channel
+            try {
+              const alertCh = await client.channels.fetch(ALERT_CHANNEL_ID);
+              if (alertCh) {
+                await alertCh.send({ embeds: [new EmbedBuilder()
+                  .setColor(0xED4245)
+                  .setTitle('⚠️ Vouch Not Received')
+                  .setDescription(
+                    `<@${claim.userId}> has not vouched after receiving **${claim.itemName}** (claim \`${claimId}\`).\n` +
+                    `A reminder DM has been sent to them.`
+                  )] });
+              }
+            } catch (e) { console.error('Alert channel error:', e.message); }
+          }, 10 * 60 * 1000); // 10 minutes
+
+          pendingVouches.set(claim.userId, {
+            claimId,
+            itemName:    claim.itemName,
+            fulfilledBy: me.username,
+            timeout:     vouchTimeout,
+          });
+        }
+      } catch (e) { console.error('Vouch channel send error:', e.message); }
 
       return interaction.editReply({ embeds: [new EmbedBuilder()
         .setColor(0x57F287)
