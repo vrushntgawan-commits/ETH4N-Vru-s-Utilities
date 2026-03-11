@@ -1,7 +1,7 @@
 const {
   Client, GatewayIntentBits, REST, Routes,
   SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits,
-  ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder
+  ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder, MessageFlags
 } = require('discord.js');
 const fetch = require('node-fetch');
 require('dotenv').config();
@@ -715,7 +715,7 @@ client.on('interactionCreate', async interaction => {
   // ── MODAL SUBMIT ──────────────────────────
   if (interaction.isModalSubmit()) {
     if (!interaction.customId.startsWith('claim_modal_')) return;
-    await interaction.deferReply({ flags: 64 });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
     const claimId = interaction.customId.replace('claim_modal_', '');
     const u       = await getUser(interaction.user.id, interaction.user.username);
@@ -798,7 +798,7 @@ client.on('interactionCreate', async interaction => {
       const idArg = interaction.options.getString('id').toUpperCase();
       const u     = await getUser(me.id, me.username);
       const item  = (u.inventory || []).find(i => i.claimId === idArg);
-      if (!item) return reply({ embeds: [errEmbed(`No item with ID \`${idArg}\` in your inventory. Use \`/inventory\` to check.`)], flags: 64 });
+      if (!item) return reply({ embeds: [errEmbed(`No item with ID \`${idArg}\` in your inventory. Use \`/inventory\` to check.`)], flags: MessageFlags.Ephemeral });
 
       const modal = new ModalBuilder().setCustomId(`claim_modal_${item.claimId}`).setTitle(`Claim: ${item.name}`);
       modal.addComponents(new ActionRowBuilder().addComponents(
@@ -823,7 +823,7 @@ client.on('interactionCreate', async interaction => {
 
     // /claims — embed list of pending claims
     if (cmd === 'claims') {
-      await interaction.deferReply({ flags: 64 });
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       const allClaims = await getClaims();
       const pending   = (Array.isArray(allClaims) ? allClaims : []).filter(c => c.status === 'pending' && c.status !== 'denied' && c.status !== 'fulfilled');
       if (!pending.length) {
@@ -849,14 +849,14 @@ client.on('interactionCreate', async interaction => {
           .addFields(chunks[i])
           .setFooter({ text: '/claimed <id>  ·  /deny-claim <id>' });
         if (i === 0) await interaction.editReply({ embeds: [embed] });
-        else         await interaction.followUp({ embeds: [embed], flags: 64 });
+        else         await interaction.followUp({ embeds: [embed], flags: MessageFlags.Ephemeral });
       }
       return;
     }
 
     // /claimed — fulfil claim + DM user
     if (cmd === 'claimed') {
-      await interaction.deferReply({ flags: 64 });
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       const claimId   = interaction.options.getString('id').toUpperCase();
       const allClaims = await getClaims();
       const claimsArr = Array.isArray(allClaims) ? allClaims : [];
@@ -972,7 +972,7 @@ client.on('interactionCreate', async interaction => {
 
     // /deny-claim — deny + refund item back to inventory + restore stock
     if (cmd === 'deny-claim') {
-      await interaction.deferReply({ flags: 64 });
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       const claimId   = interaction.options.getString('id').toUpperCase();
       const allClaims = await getClaims();
       const claimsArr = Array.isArray(allClaims) ? allClaims : [];
@@ -1056,9 +1056,9 @@ client.on('interactionCreate', async interaction => {
       const claimId = interaction.options.getString('claim_id').toUpperCase();
       const u       = await getUser(t.id, t.username);
       const inv     = u.inventory || [];
-      if (!inv.length) return reply({ embeds: [errEmbed(`<@${t.id}> has an empty inventory.`)], flags: 64 });
+      if (!inv.length) return reply({ embeds: [errEmbed(`<@${t.id}> has an empty inventory.`)], flags: MessageFlags.Ephemeral });
       const idx = inv.findIndex(i => i.claimId === claimId);
-      if (idx === -1) return reply({ embeds: [errEmbed(`No item with claim ID \`${claimId}\` in <@${t.id}>'s inventory.`)], flags: 64 });
+      if (idx === -1) return reply({ embeds: [errEmbed(`No item with claim ID \`${claimId}\` in <@${t.id}>'s inventory.`)], flags: MessageFlags.Ephemeral });
       const removed = inv.splice(idx, 1)[0];
       await saveUser(u);
       return reply({ embeds: [new EmbedBuilder()
@@ -1070,7 +1070,7 @@ client.on('interactionCreate', async interaction => {
       const t   = interaction.options.getUser('user');
       const u   = await getUser(t.id, t.username);
       const inv = u.inventory || [];
-      if (!inv.length) return reply({ embeds: [new EmbedBuilder().setColor(0xFEE75C).setDescription(`🎒 <@${t.id}>'s inventory is empty.`)], flags: 64 });
+      if (!inv.length) return reply({ embeds: [new EmbedBuilder().setColor(0xFEE75C).setDescription(`🎒 <@${t.id}>'s inventory is empty.`)], flags: MessageFlags.Ephemeral });
       const list = inv.map(item => {
         const emoji = item.category === 'Robux' ? '💎' : item.name === 'Divine' ? '🌟' : '✨';
         return `${emoji} **${item.name}** — Claim ID: \`${item.claimId}\``;
@@ -1079,7 +1079,7 @@ client.on('interactionCreate', async interaction => {
         .setTitle(`🎒 ${t.username}'s Inventory`)
         .setColor(0x9B59B6)
         .setDescription(list)
-        .setFooter({ text: `${inv.length} item(s)` })], flags: 64 });
+        .setFooter({ text: `${inv.length} item(s)` })], flags: MessageFlags.Ephemeral });
     }
     if (cmd === 'update-robux') {
       await interaction.deferReply();
@@ -1103,7 +1103,7 @@ client.on('interactionCreate', async interaction => {
 
   } catch (e) {
     console.error(`/${cmd} error:`, e);
-    const err = { embeds: [errEmbed('Something went wrong!')], flags: 64 };
+    const err = { embeds: [errEmbed('Something went wrong!')], flags: MessageFlags.Ephemeral };
     try { interaction.replied || interaction.deferred ? await interaction.followUp(err) : await interaction.reply(err); } catch {}
   }
 });
