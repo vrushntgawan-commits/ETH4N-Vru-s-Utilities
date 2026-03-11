@@ -262,6 +262,70 @@ const client = new Client({
   ],
 });
 
+// ══════════════════════════════════════════
+//  SPAM DETECTION
+//  5+ consecutive messages in a channel (no real human in between) = penalty
+// ══════════════════════════════════════════
+const channelLastMsg = new Map(); // Map<channelId, { lastUserId, count }>
+const spamCooldown   = new Set(); // users currently immune from repeat penalty
+
+async function handleSpamCheck(msg) {
+  const { id: uid, username } = msg.author;
+  const cid = msg.channel.id;
+
+  const state = channelLastMsg.get(cid) || { lastUserId: null, count: 0 };
+
+  if (state.lastUserId === uid) {
+    state.count += 1;
+  } else {
+    state.lastUserId = uid;
+    state.count = 1;
+  }
+  channelLastMsg.set(cid, state);
+
+  // Trigger at exactly 5 consecutive messages and only once per 60s per user
+  if (state.count === 5 && !spamCooldown.has(uid)) {
+    spamCooldown.add(uid);
+    setTimeout(() => spamCooldown.delete(uid), 60_000);
+
+    // Deduct 100 coins
+    if (cache.users && cache.users[uid]) {
+      cache.users[uid].coins = Math.max(0, (cache.users[uid].coins || 0) - 100);
+      scheduleCoinFlush();
+    } else {
+      try {
+        const u = await getUser(uid, username);
+        u.coins = Math.max(0, u.coins - 100);
+        await saveUser(u);
+      } catch (e) { console.error('Spam deduct error:', e.message); }
+    }
+
+    // DM the user
+    try {
+      await msg.author.send({ embeds: [new EmbedBuilder()
+        .setColor(0xED4245)
+        .setTitle('Warning!')
+        .setDescription(
+          `You have been caught spamming in <#${cid}>.
+
+` +
+          `**100** <:CoinEmoji:1481246827448766526> have been deducted from your balance.
+
+` +
+          `Please stop spamming — if you continue you will be penalised again!`
+        )] });
+    } catch { /* DMs closed */ }
+
+    // Warn in channel, auto-delete after 8s
+    try {
+      const warn = await msg.channel.send({ embeds: [new EmbedBuilder()
+        .setColor(0xED4245)
+        .setDescription(`<@${uid}> stop spamming! **100** <:CoinEmoji:1481246827448766526> have been deducted from your balance.`)] });
+      setTimeout(() => warn.delete().catch(() => {}), 8000);
+    } catch { /* no perms */ }
+  }
+}
+
 // Batched coin flush — avoids a JSONBin write on every single message
 let coinWriteTimer = null;
 function scheduleCoinFlush() {
@@ -300,6 +364,9 @@ client.once('ready', async () => {
 // ══════════════════════════════════════════
 client.on('messageCreate', async msg => {
   if (msg.author.bot || !msg.guild) return;
+
+  // Spam check — runs on every real human message
+  await handleSpamCheck(msg);
 
   const uid = msg.author.id;
   if (!cache.users) {
