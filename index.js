@@ -68,15 +68,6 @@ async function binWrite(name, data) {
   }
 }
 
-async function initBins() {
-  // Fix initial placeholder data in users and claims bins
-  const users = await binRead('users');
-  if (users.a === 'b') { await binWrite('users', {}); console.log('✅ Initialized users bin'); }
-  const claims = await binRead('claims');
-  if (claims.a === 'b') { await binWrite('claims', []); console.log('✅ Initialized claims bin'); }
-  console.log('✅ All JSONBins ready');
-}
-
 // ══════════════════════════════════════════
 //  IN-MEMORY CACHE
 //  Reads from JSONBin on demand, writes back
@@ -94,12 +85,26 @@ let cache = {
 const CACHE_TTL = { users: 0, store: 30_000, meta: 30_000, claims: 30_000 };
 let cacheTime = { users: 0, store: 0, meta: 0, claims: 0 };
 
+const BIN_DEFAULTS = {
+  users:  {},
+  store:  { robux: 0, divines: 0, celestials: 0 },
+  meta:   { stockMsgId: null, claimCounter: 0 },
+  claims: [],
+};
+
 async function read(name) {
   const now = Date.now();
   if (cache[name] !== null && (now - cacheTime[name]) < (CACHE_TTL[name] || 0)) {
     return cache[name];
   }
-  cache[name] = await binRead(name);
+  let data = await binRead(name);
+  // Handle placeholder {"a":"b"} that JSONBin forced us to use
+  if (data && data.a === 'b') data = BIN_DEFAULTS[name];
+  // Handle null/undefined
+  if (data === null || data === undefined) data = BIN_DEFAULTS[name];
+  // Unwrap empty wrapper
+  if (data && data._empty === true) data = data._data;
+  cache[name] = data;
   cacheTime[name] = now;
   return cache[name];
 }
@@ -107,7 +112,11 @@ async function read(name) {
 async function write(name, data) {
   cache[name] = data;
   cacheTime[name] = Date.now();
-  await binWrite(name, data);
+  // JSONBin rejects bare empty objects/arrays — wrap them
+  let payload = data;
+  if (Array.isArray(data) && data.length === 0) payload = { _empty: true, _data: [] };
+  else if (typeof data === 'object' && !Array.isArray(data) && Object.keys(data).length === 0) payload = { _empty: true, _data: {} };
+  await binWrite(name, payload);
 }
 
 // ── user helpers ──────────────────────────
@@ -260,9 +269,6 @@ client.once('ready', async () => {
 
   if (!GUILD_ID)    { console.error('❌ GUILD_ID missing from env'); process.exit(1); }
   if (!JSONBIN_KEY) { console.error('❌ JSONBIN_KEY missing from env'); process.exit(1); }
-
-  // Verify bins on startup
-  await initBins();
 
   const rest = new REST({ version: '10' }).setToken(process.env.BOT_TOKEN);
   try {
