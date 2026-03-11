@@ -188,9 +188,6 @@ const slashDefs = [
   new SlashCommandBuilder().setName('balance').setDescription('Check your coin balance')
     .addUserOption(o => o.setName('user').setDescription('Check someone else').setRequired(false)),
   new SlashCommandBuilder().setName('daily').setDescription('Claim coins (24h cooldown)'),
-  new SlashCommandBuilder().setName('coinflip').setDescription('Bet coins on a coinflip')
-    .addIntegerOption(o => o.setName('amount').setDescription('Coins to bet').setRequired(true).setMinValue(1)),
-  new SlashCommandBuilder().setName('rain').setDescription('[ADMIN] Rain coins — react to enter, 2 min timer')
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
     .addIntegerOption(o => o.setName('amount').setDescription('Total coins to rain').setRequired(true).setMinValue(10)),
   new SlashCommandBuilder().setName('shop').setDescription('View all items and prices'),
@@ -338,10 +335,6 @@ client.on('messageCreate', async msg => {
     if (cmd === 'lb' || cmd === 'leaderboard')    return await cmdLeaderboard(reply, msg.guild);
     if (cmd === 'help')                           return await cmdHelp(reply);
     if (cmd === 'adminhelp' && isAdmin)           return await cmdAdminHelp(reply);
-    if (cmd === 'coinflip' || cmd === 'cf') {
-      const amt = parseInt(args[0]);
-      if (isNaN(amt) || amt < 1) return reply({ embeds: [errEmbed(`Usage: \`${PREFIX}coinflip <amount>\``)] });
-      return await cmdCoinflip(reply, uid, msg.author.username, amt);
     }
     if (cmd === 'rain') {
       if (!isAdmin) return reply({ embeds: [errEmbed('Only admins can use rain!')] });
@@ -412,21 +405,6 @@ async function cmdDaily(reply, userId, username) {
     .setTimestamp(next)] });
 }
 
-// COINFLIP
-async function cmdCoinflip(reply, userId, username, amount) {
-  const u = await getUser(userId, username);
-  if (u.coins < amount) return reply({ embeds: [errEmbed(`You only have **${u.coins}** ${COIN_EMOJI}!`)] });
-  const win = Math.random() < 0.5;
-  u.coins += win ? amount : -amount;
-  if (win) u.totalEarned = (u.totalEarned || 0) + amount;
-  await saveUser(u);
-  return reply({ embeds: [new EmbedBuilder()
-    .setColor(win ? 0x57F287 : 0xED4245)
-    .setTitle(win ? '🟡 Heads — You Win!' : '⚫ Tails — You Lose!')
-    .setDescription(win
-      ? `Won **${amount}** ${COIN_EMOJI}! 🎉\nBalance: **${u.coins.toLocaleString()}** ${COIN_EMOJI}`
-      : `Lost **${amount}** ${COIN_EMOJI}. 💸\nBalance: **${u.coins.toLocaleString()}** ${COIN_EMOJI}`)] });
-}
 
 // USE-CODE
 async function cmdUseCode(reply, userId, username, codeInput) {
@@ -502,7 +480,6 @@ async function cmdHelp(reply) {
       { name: '💰 Economy', value:
         `\`${PREFIX}balance\` / \`${PREFIX}bal\` — check your ${COIN_EMOJI}\n` +
         `\`${PREFIX}daily\` — 10–15 ${COIN_EMOJI} every 24h\n` +
-        `\`${PREFIX}coinflip <amount>\` — double or nothing\n` +
         `\`${PREFIX}leaderboard\` — top 10\n` +
         `💬 Every message = 1 ${COIN_EMOJI}`, inline: false },
       { name: '🛒 Shop', value:
@@ -715,7 +692,6 @@ client.on('interactionCreate', async interaction => {
     if (cmd === 'leaderboard') return await cmdLeaderboard(reply, interaction.guild);
     if (cmd === 'help')        return await cmdHelp(reply);
     if (cmd === 'adminhelp')   return await cmdAdminHelp(reply);
-    if (cmd === 'coinflip')    return await cmdCoinflip(reply, me.id, me.username, interaction.options.getInteger('amount'));
     if (cmd === 'use-code')    return await cmdUseCode(reply, me.id, me.username, interaction.options.getString('code'));
 
     if (cmd === 'rain') {
