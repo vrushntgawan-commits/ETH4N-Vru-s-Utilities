@@ -27,98 +27,53 @@ const SHOP = [
 ];
 
 // ══════════════════════════════════════════
-//  JSONBIN API
-//  All data lives in 4 bins on jsonbin.io
-//  Bin IDs are saved in memory after first
-//  creation and re-used across restarts via
-//  a local bootstrap file (binids.json).
+//  JSONBIN API — hardcoded bin IDs
 // ══════════════════════════════════════════
-const fs   = require('fs');
-const path = require('path');
+const BIN_IDS = {
+  users:  '69b13ea5c3097a1dd516fe70',
+  store:  '69b13e7dc3097a1dd516fdc5',
+  meta:   '69b13e8fb7ec241ddc5c5aa3',
+  claims: '69b13ebbb7ec241ddc5c5b4b',
+};
 
-const BINIDS_FILE = path.join(__dirname, 'binids.json'); // only local file — just stores bin IDs, not data
-
-function loadBinIds() {
-  if (fs.existsSync(BINIDS_FILE)) {
-    try { return JSON.parse(fs.readFileSync(BINIDS_FILE, 'utf8')); } catch {}
-  }
-  return {};
-}
-function saveBinIds(ids) {
-  fs.writeFileSync(BINIDS_FILE, JSON.stringify(ids, null, 2));
-}
-
-let BIN_IDS = loadBinIds(); // { users, store, meta, claims }
-
-async function apiFetch(url, method, body) {
-  const headers = {
-    'Content-Type': 'application/json',
-    'X-Master-Key': JSONBIN_KEY,
-    'X-Bin-Versioning': 'false',
-  };
-  // JSONBin requires X-Bin-Name header on creation (POST)
-  if (method === 'POST') headers['X-Bin-Name'] = 'bot-data';
-
-  const opts = { method, headers };
-  if (body !== undefined) opts.body = JSON.stringify(body);
-
-  const res = await fetch(url, opts);
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`JSONBin ${method} ${url} → ${res.status}: ${text}`);
-  }
-  return res.json();
-}
-
-async function binCreate(name, initialData) {
-  const headers = {
-    'Content-Type': 'application/json',
-    'X-Master-Key': JSONBIN_KEY,
-    'X-Bin-Versioning': 'false',
-    'X-Bin-Name': `discord-bot-${name}`, // unique name per bin
-    'X-Bin-Private': 'true',
-  };
-  const res = await fetch('https://api.jsonbin.io/v3/b', {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(initialData),
+async function binRead(name) {
+  const res = await fetch(`https://api.jsonbin.io/v3/b/${BIN_IDS[name]}/latest`, {
+    method: 'GET',
+    headers: {
+      'X-Master-Key': JSONBIN_KEY,
+      'X-Bin-Versioning': 'false',
+    },
   });
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`JSONBin CREATE "${name}" → ${res.status}: ${text}`);
+    throw new Error(`JSONBin READ "${name}" → ${res.status}: ${text}`);
   }
   const result = await res.json();
-  const id = result.metadata.id;
-  BIN_IDS[name] = id;
-  saveBinIds(BIN_IDS);
-  console.log(`✅ Created JSONBin "${name}" → ${id}`);
-  return id;
-}
-
-async function binRead(name) {
-  if (!BIN_IDS[name]) throw new Error(`No bin ID for "${name}"`);
-  const result = await apiFetch(`https://api.jsonbin.io/v3/b/${BIN_IDS[name]}/latest`, 'GET');
   return result.record;
 }
 
 async function binWrite(name, data) {
-  if (!BIN_IDS[name]) throw new Error(`No bin ID for "${name}"`);
-  await apiFetch(`https://api.jsonbin.io/v3/b/${BIN_IDS[name]}`, 'PUT', data);
+  const res = await fetch(`https://api.jsonbin.io/v3/b/${BIN_IDS[name]}`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Master-Key': JSONBIN_KEY,
+      'X-Bin-Versioning': 'false',
+    },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`JSONBin WRITE "${name}" → ${res.status}: ${text}`);
+  }
 }
 
-// Ensure all bins exist on startup
 async function initBins() {
-  const defaults = {
-    users:  {},
-    store:  { robux: 0, divines: 0, celestials: 0 },
-    meta:   { stockMsgId: null, claimCounter: 0 },
-    claims: [],
-  };
-  for (const [name, def] of Object.entries(defaults)) {
-    if (!BIN_IDS[name]) {
-      await binCreate(name, def);
-    }
-  }
+  // Fix initial placeholder data in users and claims bins
+  const users = await binRead('users');
+  if (users.a === 'b') { await binWrite('users', {}); console.log('✅ Initialized users bin'); }
+  const claims = await binRead('claims');
+  if (claims.a === 'b') { await binWrite('claims', []); console.log('✅ Initialized claims bin'); }
   console.log('✅ All JSONBins ready');
 }
 
@@ -306,7 +261,7 @@ client.once('ready', async () => {
   if (!GUILD_ID)    { console.error('❌ GUILD_ID missing from env'); process.exit(1); }
   if (!JSONBIN_KEY) { console.error('❌ JSONBIN_KEY missing from env'); process.exit(1); }
 
-  // Init JSONBins first
+  // Verify bins on startup
   await initBins();
 
   const rest = new REST({ version: '10' }).setToken(process.env.BOT_TOKEN);
