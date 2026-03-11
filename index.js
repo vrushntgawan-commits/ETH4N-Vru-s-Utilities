@@ -321,7 +321,7 @@ function scheduleCoinFlush() {
 // ══════════════════════════════════════════
 //  READY — register commands automatically
 // ══════════════════════════════════════════
-client.once('ready', async () => {
+client.once('clientReady', async () => {
   console.log(`Bot online: ${client.user.tag}`);
   console.log(`GUILD_ID:    ${GUILD_ID    ? `SET (${GUILD_ID})` : '*** MISSING ***'}`);
   console.log(`JSONBIN_KEY: ${JSONBIN_KEY ? 'SET' : '*** MISSING ***'}`);
@@ -329,25 +329,26 @@ client.once('ready', async () => {
   if (!GUILD_ID)    { console.error('FATAL: GUILD_ID not set'); process.exit(1); }
   if (!JSONBIN_KEY) { console.error('FATAL: JSONBIN_KEY not set'); process.exit(1); }
 
-  // ── Register slash commands (delayed to avoid Railway throttle) ──
-  setTimeout(async () => {
-    const rest = new REST({ version: '10' }).setToken(process.env.BOT_TOKEN);
-    try {
-      await rest.put(Routes.applicationCommands(client.user.id), { body: [] });
-      await rest.put(Routes.applicationGuildCommands(client.user.id, GUILD_ID), { body: slashDefs });
-      console.log(`✅ Registered ${slashDefs.length} slash commands`);
-    } catch (e) {
-      console.error('Command reg failed:', e.message);
-      if (e.rawError) console.error(JSON.stringify(e.rawError));
-    }
-  }, 3000);
-
   // ── Warm caches ──────────────────────────
   try { await dbRead('users'); console.log('Users cache warmed'); }
   catch (e) { console.error('Cache warmup error:', e.message); }
 
   await updateStockEmbed(client);
   console.log('✅ Ready — all systems go');
+
+  // ── Register slash commands LAST so nothing blocks it ──
+  console.log('Attempting command registration...');
+  try {
+    const rest = new REST({ version: '10' }).setToken(process.env.BOT_TOKEN);
+    const result = await rest.put(
+      Routes.applicationGuildCommands(client.user.id, GUILD_ID),
+      { body: slashDefs }
+    );
+    console.log(`✅ Registered ${result.length} slash commands`);
+  } catch (e) {
+    console.error('Command reg failed — status:', e.status, '— message:', e.message);
+    if (e.rawError) console.error('rawError:', JSON.stringify(e.rawError));
+  }
 });
 
 // ══════════════════════════════════════════
