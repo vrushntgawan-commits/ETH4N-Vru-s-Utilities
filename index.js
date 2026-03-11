@@ -354,14 +354,16 @@ client.once('clientReady', async () => {
 
   const rest = new REST({ version: '10' }).setToken(process.env.BOT_TOKEN);
   try {
-    await rest.put(Routes.applicationCommands(client.user.id), { body: [] });
-    for (const g of client.guilds.cache.values()) {
-      try { await rest.put(Routes.applicationGuildCommands(client.user.id, g.id), { body: [] }); }
-      catch (e) { console.error(`Clear guild cmds ${g.id}:`, e.message); }
-    }
-    await rest.put(Routes.applicationGuildCommands(client.user.id, GUILD_ID), { body: slashDefs });
-    console.log('Slash commands registered');
-  } catch (e) { console.error('Command reg error:', e); }
+    // Register directly to the guild — instant, no 1-hour global delay
+    const result = await rest.put(
+      Routes.applicationGuildCommands(client.user.id, GUILD_ID),
+      { body: slashDefs }
+    );
+    console.log(`Slash commands registered: ${result.length} commands`);
+  } catch (e) {
+    console.error('Command reg error:', e.message);
+    console.error('Full error:', JSON.stringify(e, null, 2));
+  }
 
   try { await dbRead('users'); console.log('Users cache warmed'); } catch (e) { console.error('Warmup error:', e.message); }
   await updateStockEmbed(client);
