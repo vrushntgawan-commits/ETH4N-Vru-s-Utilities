@@ -1,3 +1,7 @@
+// Prevent unhandled rejections from crashing the process
+process.on('unhandledRejection', e => console.error('Unhandled rejection:', e));
+process.on('uncaughtException',  e => console.error('Uncaught exception:', e));
+
 const {
   Client, GatewayIntentBits, REST, Routes,
   SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits,
@@ -357,16 +361,16 @@ client.once('ready', async () => {
   if (!JSONBIN_KEY) { console.error('FATAL: JSONBIN_KEY env var is not set!'); process.exit(1); }
 
   console.log('Registering slash commands...');
-  const rest = new REST({ version: '10' }).setToken(process.env.BOT_TOKEN);
   try {
+    const rest = new REST({ version: '10' }).setToken(process.env.BOT_TOKEN);
     const result = await rest.put(
       Routes.applicationGuildCommands(client.user.id, GUILD_ID),
       { body: slashDefs }
     );
-    console.log(`Slash commands registered: ${result.length} commands in guild ${GUILD_ID}`);
+    console.log(`Slash commands registered: ${Array.isArray(result) ? result.length : '?'} commands`);
   } catch (e) {
     console.error('Command reg FAILED:', e.message);
-    if (e.rawError) console.error('API error:', JSON.stringify(e.rawError));
+    try { console.error('API error:', JSON.stringify(e.rawError || e)); } catch {}
   }
 
   try { await dbRead('users'); console.log('Users cache warmed'); } catch (e) { console.error('Warmup error:', e.message); }
@@ -1114,4 +1118,23 @@ client.on('interactionCreate', async interaction => {
   }
 });
 
-client.login(process.env.BOT_TOKEN);
+// Register commands immediately after login resolves
+client.login(process.env.BOT_TOKEN).then(async () => {
+  // Wait for client to be ready
+  await new Promise(resolve => {
+    if (client.isReady()) return resolve();
+    client.once('ready', resolve);
+  });
+
+  console.log('Registering slash commands post-login...');
+  try {
+    const rest2 = new REST({ version: '10' }).setToken(process.env.BOT_TOKEN);
+    const result = await rest2.put(
+      Routes.applicationGuildCommands(client.user.id, GUILD_ID),
+      { body: slashDefs }
+    );
+    console.log(`Commands registered via post-login: ${Array.isArray(result) ? result.length : '?'}`);
+  } catch (e) {
+    console.error('Post-login command reg failed:', e.message);
+  }
+}).catch(e => console.error('Login failed:', e.message));
