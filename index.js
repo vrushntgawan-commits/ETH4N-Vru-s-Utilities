@@ -360,17 +360,25 @@ client.once('ready', async () => {
   if (!GUILD_ID)    { console.error('FATAL: GUILD_ID env var is not set!'); process.exit(1); }
   if (!JSONBIN_KEY) { console.error('FATAL: JSONBIN_KEY env var is not set!'); process.exit(1); }
 
-  console.log('Registering slash commands...');
+  // Register slash commands with a 30s timeout guard
+  const regTimeout = setTimeout(() => {
+    console.error('SLASH REG TIMED OUT after 30s — Discord API unreachable?');
+  }, 30_000);
+
   try {
+    console.log(`Registering ${slashDefs.length} slash commands to guild ${GUILD_ID}...`);
     const rest = new REST({ version: '10' }).setToken(process.env.BOT_TOKEN);
-    const result = await rest.put(
+    const data = await rest.put(
       Routes.applicationGuildCommands(client.user.id, GUILD_ID),
       { body: slashDefs }
     );
-    console.log(`Slash commands registered: ${Array.isArray(result) ? result.length : '?'} commands`);
-  } catch (e) {
-    console.error('Command reg FAILED:', e.message);
-    try { console.error('API error:', JSON.stringify(e.rawError || e)); } catch {}
+    clearTimeout(regTimeout);
+    console.log(`SUCCESS: Registered ${data.length} slash commands!`);
+  } catch (err) {
+    clearTimeout(regTimeout);
+    console.error('SLASH REG ERROR status:', err.status);
+    console.error('SLASH REG ERROR message:', err.message);
+    console.error('SLASH REG ERROR body:', JSON.stringify(err.rawError ?? err.body ?? err, null, 2));
   }
 
   try { await dbRead('users'); console.log('Users cache warmed'); } catch (e) { console.error('Warmup error:', e.message); }
@@ -1118,23 +1126,4 @@ client.on('interactionCreate', async interaction => {
   }
 });
 
-// Register commands immediately after login resolves
-client.login(process.env.BOT_TOKEN).then(async () => {
-  // Wait for client to be ready
-  await new Promise(resolve => {
-    if (client.isReady()) return resolve();
-    client.once('ready', resolve);
-  });
-
-  console.log('Registering slash commands post-login...');
-  try {
-    const rest2 = new REST({ version: '10' }).setToken(process.env.BOT_TOKEN);
-    const result = await rest2.put(
-      Routes.applicationGuildCommands(client.user.id, GUILD_ID),
-      { body: slashDefs }
-    );
-    console.log(`Commands registered via post-login: ${Array.isArray(result) ? result.length : '?'}`);
-  } catch (e) {
-    console.error('Post-login command reg failed:', e.message);
-  }
-}).catch(e => console.error('Login failed:', e.message));
+client.login(process.env.BOT_TOKEN);
