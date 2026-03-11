@@ -1,22 +1,16 @@
 {
-  "name": "nodejs",
+  "name": "discord-economy-bot",
   "version": "1.0.0",
-  "description": "",
+  "description": "Discord economy bot with coins, shop, Robux & ETFB rewards",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node index.js"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
   "dependencies": {
-    "@types/node": "^22.13.11",
-    "discord.js": "^14.16.3",
-    "dotenv": "^17.3.1",
-    "drizzle-kit": "^0.31.9",
-    "drizzle-orm": "^0.45.1",
-    "drizzle-zod": "^0.8.3",
-    "pg": "^8.18.0",
-    "zod": "^4.3.6"
+    "discord.js": "^14.14.1",
+    "dotenv": "^16.3.1"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   }
 }
