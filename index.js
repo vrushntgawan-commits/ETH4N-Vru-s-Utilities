@@ -26,7 +26,8 @@ const COIN_EMOJI = '<:CoinEmoji:1481246827448766526>';
 //  CODES
 // ══════════════════════════════════════════
 const CODES = {
-  'RELEASE': { coins: 25, description: '🎉 Launch reward' },
+  'RELEASE': { coins: 25,  description: '🎉 Launch reward' },
+  'BONUS':   { coins: 50,  description: '🎁 Bonus reward'  },
 };
 
 // ══════════════════════════════════════════
@@ -328,30 +329,18 @@ client.once('ready', async () => {
   if (!GUILD_ID)    { console.error('FATAL: GUILD_ID not set'); process.exit(1); }
   if (!JSONBIN_KEY) { console.error('FATAL: JSONBIN_KEY not set'); process.exit(1); }
 
-  // ── Register slash commands ──────────────
-  const rest = new REST({ version: '10' }).setToken(process.env.BOT_TOKEN);
-  try {
-    // 1. Wipe global commands (removes duplicates)
-    await rest.put(Routes.applicationCommands(client.user.id), { body: [] });
-    console.log('Cleared global commands');
-
-    // 2. Wipe ALL guilds (kills old duplicates from old guild IDs)
-    for (const g of client.guilds.cache.values()) {
-      try {
-        await rest.put(Routes.applicationGuildCommands(client.user.id, g.id), { body: [] });
-        console.log(`Cleared commands in guild: ${g.name}`);
-      } catch (e) { console.error(`Failed to clear ${g.id}:`, e.message); }
+  // ── Register slash commands (delayed to avoid Railway throttle) ──
+  setTimeout(async () => {
+    const rest = new REST({ version: '10' }).setToken(process.env.BOT_TOKEN);
+    try {
+      await rest.put(Routes.applicationCommands(client.user.id), { body: [] });
+      await rest.put(Routes.applicationGuildCommands(client.user.id, GUILD_ID), { body: slashDefs });
+      console.log(`✅ Registered ${slashDefs.length} slash commands`);
+    } catch (e) {
+      console.error('Command reg failed:', e.message);
+      if (e.rawError) console.error(JSON.stringify(e.rawError));
     }
-
-    // 3. Register fresh to target guild only — instant, no duplicates
-    console.log(`Registering ${slashDefs.length} commands to guild: "${GUILD_ID}" (len=${GUILD_ID.length})`);
-    const result = await rest.put(Routes.applicationGuildCommands(client.user.id, GUILD_ID), { body: slashDefs });
-    console.log(`✅ Registered ${result.length} slash commands to guild ${GUILD_ID}`);
-  } catch (e) {
-    console.error('Command registration error:', e.message);
-    if (e.rawError) console.error('Raw error:', JSON.stringify(e.rawError, null, 2));
-    if (e.status)   console.error('HTTP status:', e.status);
-  }
+  }, 3000);
 
   // ── Warm caches ──────────────────────────
   try { await dbRead('users'); console.log('Users cache warmed'); }
