@@ -3,6 +3,7 @@ const {
   SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits,
   ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder
 } = require('discord.js');
+const fetch = require('node-fetch');
 require('dotenv').config();
 
 // ══════════════════════════════════════════
@@ -50,15 +51,17 @@ function saveBinIds(ids) {
 let BIN_IDS = loadBinIds(); // { users, store, meta, claims }
 
 async function apiFetch(url, method, body) {
-  const opts = {
-    method,
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Master-Key': JSONBIN_KEY,
-      'X-Bin-Versioning': 'false', // keep only latest version to save storage
-    },
+  const headers = {
+    'Content-Type': 'application/json',
+    'X-Master-Key': JSONBIN_KEY,
+    'X-Bin-Versioning': 'false',
   };
+  // JSONBin requires X-Bin-Name header on creation (POST)
+  if (method === 'POST') headers['X-Bin-Name'] = 'bot-data';
+
+  const opts = { method, headers };
   if (body !== undefined) opts.body = JSON.stringify(body);
+
   const res = await fetch(url, opts);
   if (!res.ok) {
     const text = await res.text();
@@ -68,7 +71,23 @@ async function apiFetch(url, method, body) {
 }
 
 async function binCreate(name, initialData) {
-  const result = await apiFetch('https://api.jsonbin.io/v3/b', 'POST', initialData);
+  const headers = {
+    'Content-Type': 'application/json',
+    'X-Master-Key': JSONBIN_KEY,
+    'X-Bin-Versioning': 'false',
+    'X-Bin-Name': `discord-bot-${name}`, // unique name per bin
+    'X-Bin-Private': 'true',
+  };
+  const res = await fetch('https://api.jsonbin.io/v3/b', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(initialData),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`JSONBin CREATE "${name}" → ${res.status}: ${text}`);
+  }
+  const result = await res.json();
   const id = result.metadata.id;
   BIN_IDS[name] = id;
   saveBinIds(BIN_IDS);
