@@ -347,27 +347,31 @@ function scheduleCoinFlush() {
   }, 3000);
 }
 
-client.once('clientReady', async () => {
+client.once('ready', async () => {
   console.log(`Bot online: ${client.user.tag}`);
-  if (!GUILD_ID)    { console.error('GUILD_ID missing'); process.exit(1); }
-  if (!JSONBIN_KEY) { console.error('JSONBIN_KEY missing'); process.exit(1); }
+  console.log(`GUILD_ID: ${GUILD_ID ? 'SET (' + GUILD_ID + ')' : 'MISSING!'}`);
+  console.log(`JSONBIN_KEY: ${JSONBIN_KEY ? 'SET' : 'MISSING!'}`);
+  console.log(`BOT_TOKEN: ${process.env.BOT_TOKEN ? 'SET' : 'MISSING!'}`);
 
+  if (!GUILD_ID)    { console.error('FATAL: GUILD_ID env var is not set!'); process.exit(1); }
+  if (!JSONBIN_KEY) { console.error('FATAL: JSONBIN_KEY env var is not set!'); process.exit(1); }
+
+  console.log('Registering slash commands...');
   const rest = new REST({ version: '10' }).setToken(process.env.BOT_TOKEN);
   try {
-    // Register directly to the guild — instant, no 1-hour global delay
     const result = await rest.put(
       Routes.applicationGuildCommands(client.user.id, GUILD_ID),
       { body: slashDefs }
     );
-    console.log(`Slash commands registered: ${result.length} commands`);
+    console.log(`Slash commands registered: ${result.length} commands in guild ${GUILD_ID}`);
   } catch (e) {
-    console.error('Command reg error:', e.message);
-    console.error('Full error:', JSON.stringify(e, null, 2));
+    console.error('Command reg FAILED:', e.message);
+    if (e.rawError) console.error('API error:', JSON.stringify(e.rawError));
   }
 
   try { await dbRead('users'); console.log('Users cache warmed'); } catch (e) { console.error('Warmup error:', e.message); }
   await updateStockEmbed(client);
-  console.log('Ready');
+  console.log('Ready - all systems go');
 });
 
 // ══════════════════════════════════════════
