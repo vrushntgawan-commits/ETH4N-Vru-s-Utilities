@@ -188,6 +188,7 @@ const slashDefs = [
   new SlashCommandBuilder().setName('balance').setDescription('Check your coin balance')
     .addUserOption(o => o.setName('user').setDescription('Check someone else').setRequired(false)),
   new SlashCommandBuilder().setName('daily').setDescription('Claim coins (24h cooldown)'),
+  new SlashCommandBuilder().setName('rain').setDescription('[ADMIN] Rain coins — react to enter, 2 min timer')
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
     .addIntegerOption(o => o.setName('amount').setDescription('Total coins to rain').setRequired(true).setMinValue(10)),
   new SlashCommandBuilder().setName('shop').setDescription('View all items and prices'),
@@ -335,7 +336,6 @@ client.on('messageCreate', async msg => {
     if (cmd === 'lb' || cmd === 'leaderboard')    return await cmdLeaderboard(reply, msg.guild);
     if (cmd === 'help')                           return await cmdHelp(reply);
     if (cmd === 'adminhelp' && isAdmin)           return await cmdAdminHelp(reply);
-    }
     if (cmd === 'rain') {
       if (!isAdmin) return reply({ embeds: [errEmbed('Only admins can use rain!')] });
       const amt = parseInt(args[0]);
