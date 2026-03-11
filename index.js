@@ -20,11 +20,10 @@ const GUILD_ID         = process.env.GUILD_ID;
 const JSONBIN_KEY      = process.env.JSONBIN_KEY;
 const PREFIX           = 'u!';
 
-// Custom emoji — only works in description/field values, NOT field names
 const COIN_EMOJI = '<:CoinEmoji:1481246827448766526>';
 
 // ══════════════════════════════════════════
-//  CODES  (hardcoded, one-time per user)
+//  CODES
 // ══════════════════════════════════════════
 const CODES = {
   'RELEASE': { coins: 25, description: '🎉 Launch reward' },
@@ -32,7 +31,6 @@ const CODES = {
 
 // ══════════════════════════════════════════
 //  PENDING VOUCHES
-//  Map<userId, { claimId, itemName, fulfilledBy, timeout }>
 // ══════════════════════════════════════════
 const pendingVouches = new Map();
 
@@ -153,13 +151,7 @@ function fmt(ms) {
   const s = Math.floor(ms / 1000), m = Math.floor(s / 60), h = Math.floor(m / 60);
   return h > 0 ? `${h}h ${m % 60}m` : m > 0 ? `${m}m ${s % 60}s` : `${s}s`;
 }
-
-// Discord dynamic timestamp — renders in each user's own local timezone
-// style: R=relative, t=short time, T=long time, d=short date, f=full
-function ts(unixMs, style = 'R') {
-  return `<t:${Math.floor(unixMs / 1000)}:${style}>`;
-}
-
+function ts(unixMs, style = 'R') { return `<t:${Math.floor(unixMs / 1000)}:${style}>`; }
 function errEmbed(text) { return new EmbedBuilder().setColor(0xED4245).setDescription(`❌ ${text}`); }
 function okEmbed(text)  { return new EmbedBuilder().setColor(0x57F287).setDescription(`✅ ${text}`); }
 
@@ -169,9 +161,9 @@ function stockEmbed(store) {
     .setColor(0x5865F2)
     .setDescription('Use `/shop` to see prices and `/redeem` or `u!redeem` to purchase!')
     .addFields(
-      { name: '💎 Robux',      value: store.robux      > 0 ? `**${store.robux}** available`       : '❌ Out of stock', inline: true },
-      { name: '✨ Celestials', value: store.celestials > 0 ? `**${store.celestials}x** available`  : '❌ Out of stock', inline: true },
-      { name: '🌟 Divines',   value: store.divines    > 0 ? `**${store.divines}x** available`     : '❌ Out of stock', inline: true }
+      { name: '💎 Robux',      value: store.robux      > 0 ? `**${store.robux}** available`      : '❌ Out of stock', inline: true },
+      { name: '✨ Celestials', value: store.celestials > 0 ? `**${store.celestials}x** available` : '❌ Out of stock', inline: true },
+      { name: '🌟 Divines',   value: store.divines    > 0 ? `**${store.divines}x** available`    : '❌ Out of stock', inline: true }
     )
     .setFooter({ text: 'Stock updated by admins' });
 }
@@ -185,7 +177,7 @@ async function updateStockEmbed(clientRef) {
     const meta  = await getMeta();
     if (meta.stockMsgId) {
       try { const m = await ch.messages.fetch(meta.stockMsgId); await m.edit({ embeds: [embed] }); return; }
-      catch { /* deleted, resend below */ }
+      catch { /* deleted, resend */ }
     }
     const sent = await ch.send({ embeds: [embed] });
     meta.stockMsgId = sent.id;
@@ -194,7 +186,7 @@ async function updateStockEmbed(clientRef) {
 }
 
 // ══════════════════════════════════════════
-//  SLASH COMMANDS
+//  SLASH COMMAND DEFINITIONS
 // ══════════════════════════════════════════
 const slashDefs = [
   new SlashCommandBuilder().setName('balance').setDescription('Check your coin balance')
@@ -206,18 +198,18 @@ const slashDefs = [
   new SlashCommandBuilder().setName('shop').setDescription('View all items and prices'),
   new SlashCommandBuilder().setName('redeem').setDescription('Buy an item from the shop')
     .addStringOption(o => o.setName('item').setDescription('Item to buy').setRequired(true).addChoices(
-      { name: '25 Robux — 100 coins',    value: 'robux_25'   },
-      { name: '50 Robux — 200 coins',    value: 'robux_50'   },
-      { name: '75 Robux — 300 coins',    value: 'robux_75'   },
-      { name: '100 Robux — 400 coins',   value: 'robux_100'  },
-      { name: '125 Robux — 500 coins',   value: 'robux_125'  },
-      { name: '150 Robux — 600 coins',   value: 'robux_150'  },
-      { name: '175 Robux — 700 coins',   value: 'robux_175'  },
-      { name: '200 Robux — 800 coins',   value: 'robux_200'  },
-      { name: '225 Robux — 900 coins',   value: 'robux_225'  },
-      { name: '250 Robux — 1000 coins',  value: 'robux_250'  },
-      { name: 'Celestial ETFB — 100 coins', value: 'etfb_cel' },
-      { name: 'Divine ETFB — 250 coins',    value: 'etfb_div' }
+      { name: '25 Robux — 100 coins',       value: 'robux_25'   },
+      { name: '50 Robux — 200 coins',       value: 'robux_50'   },
+      { name: '75 Robux — 300 coins',       value: 'robux_75'   },
+      { name: '100 Robux — 400 coins',      value: 'robux_100'  },
+      { name: '125 Robux — 500 coins',      value: 'robux_125'  },
+      { name: '150 Robux — 600 coins',      value: 'robux_150'  },
+      { name: '175 Robux — 700 coins',      value: 'robux_175'  },
+      { name: '200 Robux — 800 coins',      value: 'robux_200'  },
+      { name: '225 Robux — 900 coins',      value: 'robux_225'  },
+      { name: '250 Robux — 1000 coins',     value: 'robux_250'  },
+      { name: 'Celestial ETFB — 100 coins', value: 'etfb_cel'   },
+      { name: 'Divine ETFB — 250 coins',    value: 'etfb_div'   }
     )),
   new SlashCommandBuilder().setName('inventory').setDescription('View your unclaimed items'),
   new SlashCommandBuilder().setName('claim').setDescription('Submit a delivery claim for an item')
@@ -233,7 +225,7 @@ const slashDefs = [
   new SlashCommandBuilder().setName('claimed').setDescription('[ADMIN] Mark a claim as fulfilled')
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
     .addStringOption(o => o.setName('id').setDescription('Claim ID, e.g. C1').setRequired(true)),
-  new SlashCommandBuilder().setName('deny-claim').setDescription('[ADMIN] Deny a claim and refund item to user inventory')
+  new SlashCommandBuilder().setName('deny-claim').setDescription('[ADMIN] Deny a claim and refund item to inventory')
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
     .addStringOption(o => o.setName('id').setDescription('Claim ID, e.g. C1').setRequired(true)),
   new SlashCommandBuilder().setName('update-robux').setDescription('[ADMIN] Update Robux stock')
@@ -252,7 +244,7 @@ const slashDefs = [
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
     .addUserOption(o => o.setName('user').setDescription('Target').setRequired(true))
     .addIntegerOption(o => o.setName('amount').setDescription('Amount').setRequired(true).setMinValue(1)),
-  new SlashCommandBuilder().setName('remove-inv').setDescription('[ADMIN] Remove an item from a user inventory by claim ID')
+  new SlashCommandBuilder().setName('remove-inv').setDescription('[ADMIN] Remove an item from a user inventory')
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
     .addUserOption(o => o.setName('user').setDescription('Target user').setRequired(true))
     .addStringOption(o => o.setName('claim_id').setDescription('Claim ID to remove, e.g. C1').setRequired(true)),
@@ -276,32 +268,21 @@ const client = new Client({
 
 // ══════════════════════════════════════════
 //  SPAM DETECTION
-//  15+ consecutive messages in a channel without anyone else talking = -100 coins
 // ══════════════════════════════════════════
-const channelLastMsg = new Map(); // Map<channelId, { lastUserId, count }>
-const spamCooldown   = new Set(); // prevents double-penalising within 60s
+const channelLastMsg = new Map();
+const spamCooldown   = new Set();
 
 async function handleSpamCheck(msg) {
   const { id: uid, username } = msg.author;
-  const cid = msg.channel.id;
-
+  const cid   = msg.channel.id;
   const state = channelLastMsg.get(cid) || { lastUserId: null, count: 0 };
-
-  if (state.lastUserId === uid) {
-    state.count += 1;
-  } else {
-    // A different real human spoke — reset this channel's streak
-    state.lastUserId = uid;
-    state.count = 1;
-  }
+  if (state.lastUserId === uid) { state.count += 1; }
+  else { state.lastUserId = uid; state.count = 1; }
   channelLastMsg.set(cid, state);
 
-  // Penalise at exactly 15 consecutive messages
   if (state.count === 15 && !spamCooldown.has(uid)) {
     spamCooldown.add(uid);
     setTimeout(() => spamCooldown.delete(uid), 60_000);
-
-    // Deduct 100 coins
     if (cache.users && cache.users[uid]) {
       cache.users[uid].coins = Math.max(0, (cache.users[uid].coins || 0) - 100);
       scheduleCoinFlush();
@@ -312,34 +293,19 @@ async function handleSpamCheck(msg) {
         await saveUser(u);
       } catch (e) { console.error('Spam deduct error:', e.message); }
     }
-
-    // DM the user
     try {
-      await msg.author.send({ embeds: [new EmbedBuilder()
-        .setColor(0xED4245)
-        .setTitle('⚠️ Spam Warning!')
-        .setDescription(
-          `You have been caught spamming in <#${cid}>.
-
-` +
-          `**100** <:CoinEmoji:1481246827448766526> have been deducted from your balance.
-
-` +
-          `Please stop spamming — if you continue you will be penalised again!`
-        )] });
+      await msg.author.send({ embeds: [new EmbedBuilder().setColor(0xED4245).setTitle('⚠️ Spam Warning!')
+        .setDescription(`You were caught spamming in <#${cid}>.\n\n**100** ${COIN_EMOJI} deducted from your balance.\n\nStop spamming or you will be penalised again!`)] });
     } catch { /* DMs closed */ }
-
-    // Warn in channel, auto-delete after 8s
     try {
-      const warn = await msg.channel.send({ embeds: [new EmbedBuilder()
-        .setColor(0xED4245)
-        .setDescription(`⚠️ <@${uid}> stop spamming! **100** <:CoinEmoji:1481246827448766526> have been deducted from your balance.`)] });
+      const warn = await msg.channel.send({ embeds: [new EmbedBuilder().setColor(0xED4245)
+        .setDescription(`⚠️ <@${uid}> stop spamming! **100** ${COIN_EMOJI} deducted.`)] });
       setTimeout(() => warn.delete().catch(() => {}), 8000);
     } catch { /* no perms */ }
   }
 }
 
-// Batched coin flush — avoids a JSONBin write on every single message
+// Batched coin flush — writes to JSONBin at most once every 3s
 let coinWriteTimer = null;
 function scheduleCoinFlush() {
   if (coinWriteTimer) return;
@@ -351,49 +317,68 @@ function scheduleCoinFlush() {
   }, 3000);
 }
 
+// ══════════════════════════════════════════
+//  READY — register commands automatically
+// ══════════════════════════════════════════
 client.once('ready', async () => {
   console.log(`Bot online: ${client.user.tag}`);
-  console.log(`GUILD_ID: ${GUILD_ID ? 'SET (' + GUILD_ID + ')' : 'MISSING!'}`);
-  console.log(`JSONBIN_KEY: ${JSONBIN_KEY ? 'SET' : 'MISSING!'}`);
-  console.log(`BOT_TOKEN: ${process.env.BOT_TOKEN ? 'SET' : 'MISSING!'}`);
+  console.log(`GUILD_ID:    ${GUILD_ID    ? 'SET' : '*** MISSING ***'}`);
+  console.log(`JSONBIN_KEY: ${JSONBIN_KEY ? 'SET' : '*** MISSING ***'}`);
 
-  if (!GUILD_ID)    { console.error('FATAL: GUILD_ID env var is not set!'); process.exit(1); }
-  if (!JSONBIN_KEY) { console.error('FATAL: JSONBIN_KEY env var is not set!'); process.exit(1); }
+  if (!GUILD_ID)    { console.error('FATAL: GUILD_ID not set'); process.exit(1); }
+  if (!JSONBIN_KEY) { console.error('FATAL: JSONBIN_KEY not set'); process.exit(1); }
 
-  // Commands are registered via register-commands.js — run that locally once
+  // ── Register slash commands ──────────────
+  const rest = new REST({ version: '10' }).setToken(process.env.BOT_TOKEN);
+  try {
+    // 1. Wipe global commands (removes duplicates)
+    await rest.put(Routes.applicationCommands(client.user.id), { body: [] });
+    console.log('Cleared global commands');
 
-  try { await dbRead('users'); console.log('Users cache warmed'); } catch (e) { console.error('Warmup error:', e.message); }
+    // 2. Wipe ALL guilds (kills old duplicates from old guild IDs)
+    for (const g of client.guilds.cache.values()) {
+      try {
+        await rest.put(Routes.applicationGuildCommands(client.user.id, g.id), { body: [] });
+        console.log(`Cleared commands in guild: ${g.name}`);
+      } catch (e) { console.error(`Failed to clear ${g.id}:`, e.message); }
+    }
+
+    // 3. Register fresh to target guild only — instant, no duplicates
+    await rest.put(Routes.applicationGuildCommands(client.user.id, GUILD_ID), { body: slashDefs });
+    console.log(`✅ Registered ${slashDefs.length} slash commands to guild ${GUILD_ID}`);
+  } catch (e) { console.error('Command registration error:', e); }
+
+  // ── Warm caches ──────────────────────────
+  try { await dbRead('users'); console.log('Users cache warmed'); }
+  catch (e) { console.error('Cache warmup error:', e.message); }
+
   await updateStockEmbed(client);
-  console.log('Ready - all systems go');
+  console.log('✅ Ready — all systems go');
 });
 
 // ══════════════════════════════════════════
-//  MESSAGE — 1 message = 1 coin, always
+//  MESSAGE — 1 coin per message + prefix
 // ══════════════════════════════════════════
 client.on('messageCreate', async msg => {
   if (msg.author.bot || !msg.guild) return;
 
-  // ── Vouch channel listener ──
+  // Vouch channel listener
   if (msg.channel.id === VOUCH_CHANNEL_ID && pendingVouches.has(msg.author.id)) {
-    // Valid vouch format: "Vouch @user <reason>" (case-insensitive, mentions or plain @name)
-    const vouchMatch = msg.content.match(/^vouch\s+@\S+\s+.+/i);
-    if (vouchMatch) {
+    if (/^vouch\s+@\S+\s+.+/i.test(msg.content)) {
       const data = pendingVouches.get(msg.author.id);
       clearTimeout(data.timeout);
       pendingVouches.delete(msg.author.id);
-      // React to confirm
       try { await msg.react('✅'); } catch {}
     }
   }
 
-  // Spam check — runs on every real human message
   await handleSpamCheck(msg);
 
+  // Coin grant — every message = 1 coin
   const uid = msg.author.id;
   if (!cache.users) {
     try { await dbRead('users'); } catch (e) { console.error('Cache load error:', e.message); }
   }
-
   if (cache.users) {
     if (!cache.users[uid]) {
       cache.users[uid] = { id: uid, username: msg.author.username, coins: 0, totalEarned: 0, lastDaily: null, lastWork: null, inventory: [], redeemedCodes: [] };
@@ -409,7 +394,7 @@ client.on('messageCreate', async msg => {
     }).catch(e => console.error('Coin user error:', e.message));
   }
 
-  // ── Prefix commands ──
+  // Prefix commands
   if (!msg.content.startsWith(PREFIX)) return;
   const args    = msg.content.slice(PREFIX.length).trim().split(/\s+/);
   const cmd     = args.shift().toLowerCase();
@@ -417,15 +402,14 @@ client.on('messageCreate', async msg => {
   const isAdmin = msg.member?.permissions.has(PermissionFlagsBits.Administrator);
 
   try {
-    if (cmd === 'balance' || cmd === 'bal')       return await cmdBalance(reply, msg.mentions.users.first() || msg.author);
-    if (cmd === 'daily')                          return await cmdDaily(reply, uid, msg.author.username);
-    if (cmd === 'shop')                           return await cmdShop(reply);
-    if (cmd === 'inventory')                      return await cmdInventory(reply, uid, msg.author.username);
-    if (cmd === 'lb' || cmd === 'leaderboard')    return await cmdLeaderboard(reply, msg.guild);
-    if (cmd === 'help')                           return await cmdHelp(reply);
-    if (cmd === 'adminhelp' && isAdmin)           return await cmdAdminHelp(reply);
-    if (cmd === 'rain') {
-      if (!isAdmin) return reply({ embeds: [errEmbed('Only admins can use rain!')] });
+    if (cmd === 'balance' || cmd === 'bal')     return await cmdBalance(reply, msg.mentions.users.first() || msg.author);
+    if (cmd === 'daily')                        return await cmdDaily(reply, uid, msg.author.username);
+    if (cmd === 'shop')                         return await cmdShop(reply);
+    if (cmd === 'inventory')                    return await cmdInventory(reply, uid, msg.author.username);
+    if (cmd === 'lb' || cmd === 'leaderboard')  return await cmdLeaderboard(reply, msg.guild);
+    if (cmd === 'help')                         return await cmdHelp(reply);
+    if (cmd === 'adminhelp' && isAdmin)         return await cmdAdminHelp(reply);
+    if (cmd === 'rain' && isAdmin) {
       const amt = parseInt(args[0]);
       if (isNaN(amt) || amt < 10) return reply({ embeds: [errEmbed(`Usage: \`${PREFIX}rain <amount>\` (min 10)`)] });
       return await cmdRain(msg, msg.guild, uid, msg.author.username, amt);
@@ -463,8 +447,6 @@ client.on('messageCreate', async msg => {
 // ══════════════════════════════════════════
 //  COMMAND FUNCTIONS
 // ══════════════════════════════════════════
-
-// BALANCE — coins only, clean design
 async function cmdBalance(reply, target) {
   const u = await getUser(target.id, target.username);
   return reply({ embeds: [new EmbedBuilder()
@@ -474,35 +456,28 @@ async function cmdBalance(reply, target) {
     .setFooter({ text: `Total earned all-time: ${(u.totalEarned || 0).toLocaleString()} coins` })] });
 }
 
-// DAILY
 async function cmdDaily(reply, userId, username) {
   const u = await getUser(userId, username);
   const cd = 24 * 60 * 60 * 1000, now = Date.now();
-  if (u.lastDaily && now - u.lastDaily < cd) {
+  if (u.lastDaily && now - u.lastDaily < cd)
     return reply({ embeds: [errEmbed(`Your next daily is ready ${ts(u.lastDaily + cd)} (${ts(u.lastDaily + cd, 'T')})`)] });
-  }
-  const earned = Math.floor(Math.random() * 6) + 10; // 10–15
+  const earned = Math.floor(Math.random() * 6) + 10;
   u.coins += earned; u.totalEarned = (u.totalEarned || 0) + earned; u.lastDaily = now;
   await saveUser(u);
-  const next = now + cd;
   return reply({ embeds: [new EmbedBuilder()
     .setColor(0x57F287)
     .setTitle('🎁 Daily Claimed!')
     .setDescription(`You received **${earned}** ${COIN_EMOJI}!\nBalance: **${u.coins.toLocaleString()}** ${COIN_EMOJI}`)
-    .setFooter({ text: 'Next daily available' })
-    .setTimestamp(next)] });
+    .setFooter({ text: `Next daily: ${fmt(cd)} from now` })] });
 }
 
-
-// USE-CODE
 async function cmdUseCode(reply, userId, username, codeInput) {
   const key  = codeInput.toUpperCase().trim();
   const code = CODES[key];
   if (!code) return reply({ embeds: [errEmbed(`Code \`${key}\` doesn't exist!`)] });
   const u = await getUser(userId, username);
   if (u.redeemedCodes.includes(key)) return reply({ embeds: [errEmbed(`You've already redeemed \`${key}\`!`)] });
-  u.coins += code.coins;
-  u.totalEarned = (u.totalEarned || 0) + code.coins;
+  u.coins += code.coins; u.totalEarned = (u.totalEarned || 0) + code.coins;
   u.redeemedCodes.push(key);
   await saveUser(u);
   return reply({ embeds: [new EmbedBuilder()
@@ -511,11 +486,10 @@ async function cmdUseCode(reply, userId, username, codeInput) {
     .setDescription(`${code.description}\nYou received **${code.coins}** ${COIN_EMOJI}!\nNew balance: **${u.coins.toLocaleString()}** ${COIN_EMOJI}`)] });
 }
 
-// SHOP — items only, no extra info
 async function cmdShop(reply) {
   const robuxLines = SHOP.filter(i => i.category === 'Robux')
     .map(i => `💎 **${i.name}** — \`${i.cost}\` ${COIN_EMOJI}  ·  ID: \`${i.id}\``).join('\n');
-  const etfbLines  = SHOP.filter(i => i.category === 'ETFB')
+  const etfbLines = SHOP.filter(i => i.category === 'ETFB')
     .map(i => `${i.id === 'etfb_cel' ? '✨' : '🌟'} **${i.name}** — \`${i.cost}\` ${COIN_EMOJI}  ·  ID: \`${i.id}\``).join('\n');
   return reply({ embeds: [new EmbedBuilder()
     .setTitle('🏪 Rewards Shop')
@@ -527,7 +501,6 @@ async function cmdShop(reply) {
     .setFooter({ text: `Buy: /redeem <id> or ${PREFIX}redeem <id>  |  Then: /claim <id>` })] });
 }
 
-// INVENTORY
 async function cmdInventory(reply, userId, username) {
   const u   = await getUser(userId, username);
   const inv = u.inventory || [];
@@ -543,44 +516,41 @@ async function cmdInventory(reply, userId, username) {
     .setFooter({ text: `${inv.length} item(s) · /claim <id> to submit` })] });
 }
 
-// LEADERBOARD
 async function cmdLeaderboard(reply, guild) {
-  const top    = await getLeaderboard(50);
-  const medals = ["🥇", "🥈", "🥉"];
+  const top     = await getLeaderboard(50);
+  const medals  = ['🥇', '🥈', '🥉'];
   const filtered = [];
   for (const u of top) {
     if (filtered.length >= 10) break;
     try {
       const member = await guild.members.fetch(u.id);
       if (!member.permissions.has(PermissionFlagsBits.Administrator)) filtered.push(u);
-    } catch { /* user left server — skip */ }
+    } catch { /* left server */ }
   }
-  const list = filtered.map((u, i) => `${medals[i] || `**${i + 1}.**`} <@${u.id}> — **${u.coins.toLocaleString()}** ${COIN_EMOJI}`).join("\n");
-  return reply({ embeds: [new EmbedBuilder().setTitle("🏆 Coin Leaderboard").setColor(0xF1C40F).setDescription(list || "No data yet!")] });
+  const list = filtered.map((u, i) => `${medals[i] || `**${i + 1}.**`} <@${u.id}> — **${u.coins.toLocaleString()}** ${COIN_EMOJI}`).join('\n');
+  return reply({ embeds: [new EmbedBuilder().setTitle('🏆 Coin Leaderboard').setColor(0xF1C40F).setDescription(list || 'No data yet!')] });
 }
 
-// HELP
 async function cmdHelp(reply) {
   return reply({ embeds: [new EmbedBuilder()
     .setTitle(`📖 Help — Prefix: \`${PREFIX}\``)
     .setColor(0x5865F2)
     .addFields(
       { name: '💰 Economy', value:
-        `\`${PREFIX}balance\` / \`${PREFIX}bal\` — check your ${COIN_EMOJI}\n` +
-        `\`${PREFIX}daily\` — 10–15 ${COIN_EMOJI} every 24h\n` +
-        `\`${PREFIX}leaderboard\` — top 10\n` +
-        `💬 Every message = 1 ${COIN_EMOJI}`, inline: false },
+          `\`${PREFIX}balance\` / \`${PREFIX}bal\` — check your ${COIN_EMOJI}\n` +
+          `\`${PREFIX}daily\` — 10–15 ${COIN_EMOJI} every 24h\n` +
+          `\`${PREFIX}leaderboard\` — top 10\n` +
+          `💬 Every message = 1 ${COIN_EMOJI}`, inline: false },
       { name: '🛒 Shop', value:
-        `\`${PREFIX}shop\` — view items & prices\n` +
-        `\`${PREFIX}redeem <id>\` — buy an item\n` +
-        `\`${PREFIX}inventory\` — view your items\n` +
-        `\`/claim <id>\` — submit a claim`, inline: false },
+          `\`${PREFIX}shop\` — view items & prices\n` +
+          `\`${PREFIX}redeem <id>\` — buy an item\n` +
+          `\`${PREFIX}inventory\` — view your items\n` +
+          `\`/claim <id>\` — submit a delivery claim`, inline: false },
       { name: '🎟️ Codes', value:
-        `\`/use-code <code>\` or \`${PREFIX}use-code <code>\``, inline: false }
+          `\`/use-code <code>\` or \`${PREFIX}use-code <code>\``, inline: false }
     )] });
 }
 
-// ADMIN HELP
 async function cmdAdminHelp(reply) {
   return reply({ embeds: [new EmbedBuilder()
     .setTitle('🔒 Admin Commands')
@@ -588,28 +558,25 @@ async function cmdAdminHelp(reply) {
     .addFields(
       { name: '📦 Stock',  value: `/update-robux <amount>\n/update-etfb <type> <amount>`, inline: false },
       { name: '👥 Coins',  value: `/give @user <amount>\n/take @user <amount>`, inline: false },
-      { name: '🌧️ Rain',  value: `/rain <amount> — 2-min reaction rain (admin only)`, inline: false },
-      { name: '📋 Claims', value: `/claims — view pending\n/claimed <id> — mark fulfilled\n/deny-claim <id> — deny & refund to inventory`, inline: false }
+      { name: '🌧️ Rain',  value: `/rain <amount> — 2 min reaction rain (admin only)`, inline: false },
+      { name: '📋 Claims', value: `/claims — view pending\n/claimed <id> — mark fulfilled\n/deny-claim <id> — deny & refund inventory`, inline: false },
+      { name: '🎒 Inventory', value: `/check-inventory @user\n/remove-inv @user <claimId>`, inline: false }
     )] });
 }
 
-// REDEEM
 async function cmdRedeem(reply, userId, username, itemId) {
   const item = SHOP.find(i => i.id === itemId);
   if (!item) return reply({ embeds: [errEmbed(`Unknown item ID. Use \`${PREFIX}shop\` to see valid IDs.`)] });
-
   const u = await getUser(userId, username);
   if (u.coins < item.cost) return reply({ embeds: [errEmbed(`Need **${item.cost}** ${COIN_EMOJI}, you only have **${u.coins}** ${COIN_EMOJI}!`)] });
-
   const store = await getStore();
-  if (item.id === 'etfb_cel' && store.celestials <= 0)              return reply({ embeds: [errEmbed('Celestials are out of stock!')] });
-  if (item.id === 'etfb_div' && store.divines    <= 0)              return reply({ embeds: [errEmbed('Divines are out of stock!')] });
-  if (item.category === 'Robux' && store.robux < item.robuxAmt)     return reply({ embeds: [errEmbed(`Only **${store.robux}** Robux in stock — not enough for **${item.name}**!`)] });
+  if (item.id === 'etfb_cel' && store.celestials <= 0)           return reply({ embeds: [errEmbed('Celestials are out of stock!')] });
+  if (item.id === 'etfb_div' && store.divines    <= 0)           return reply({ embeds: [errEmbed('Divines are out of stock!')] });
+  if (item.category === 'Robux' && store.robux < item.robuxAmt)  return reply({ embeds: [errEmbed(`Only **${store.robux}** Robux in stock — not enough for **${item.name}**!`)] });
 
-  // Deduct stock at purchase
-  if      (item.id === 'etfb_cel')       store.celestials = Math.max(0, store.celestials - 1);
-  else if (item.id === 'etfb_div')       store.divines    = Math.max(0, store.divines    - 1);
-  else if (item.category === 'Robux')    store.robux      = Math.max(0, store.robux      - item.robuxAmt);
+  if      (item.id === 'etfb_cel')      store.celestials = Math.max(0, store.celestials - 1);
+  else if (item.id === 'etfb_div')      store.divines    = Math.max(0, store.divines    - 1);
+  else if (item.category === 'Robux')   store.robux      = Math.max(0, store.robux      - item.robuxAmt);
   await saveStore(store);
   await updateStockEmbed(client);
 
@@ -628,7 +595,6 @@ async function cmdRedeem(reply, userId, username, itemId) {
     )] });
 }
 
-// RAIN — admin only, reaction-based 2 min
 async function cmdRain(msgOrInteraction, guild, senderId, senderName, amount) {
   const isInteraction = !!msgOrInteraction.deferReply;
   const sender = await getUser(senderId, senderName);
@@ -639,16 +605,14 @@ async function cmdRain(msgOrInteraction, guild, senderId, senderName, amount) {
   if (sender.coins < amount) return errReply(`You only have **${sender.coins}** ${COIN_EMOJI}!`);
 
   const RAIN_DURATION = 2 * 60 * 1000;
-  const endsAt        = Date.now() + RAIN_DURATION;
-
+  const endsAt = Date.now() + RAIN_DURATION;
   const rainEmbed = new EmbedBuilder()
     .setColor(0x3498DB)
     .setTitle('🌧️ Coin Rain — React to Enter!')
     .setDescription(
       `<@${senderId}> is raining **${amount}** ${COIN_EMOJI}!\n\n` +
-      `React with 🌧️ to enter!\n` +
-      `Coins will be split equally among all who react.\n\n` +
-      `⏰ Ends ${ts(endsAt)} — at ${ts(endsAt, 'T')} your local time`
+      `React with 🌧️ to enter!\nCoins will be split equally among all who react.\n\n` +
+      `⏰ Ends ${ts(endsAt)} (${ts(endsAt, 'T')} your time)`
     );
 
   let rainMsg;
@@ -669,23 +633,17 @@ async function cmdRain(msgOrInteraction, guild, senderId, senderName, amount) {
         const users = await reaction.users.fetch();
         reactors = [...users.values()].filter(u => !u.bot && u.id !== senderId);
       }
-
       if (!reactors.length) {
-        await rainMsg.reply({ embeds: [new EmbedBuilder().setColor(0xED4245).setTitle('🌧️ Rain Ended').setDescription(`Nobody reacted! **${amount}** ${COIN_EMOJI} refunded to <@${senderId}>.`)] });
-        return;
+        return rainMsg.reply({ embeds: [new EmbedBuilder().setColor(0xED4245).setTitle('🌧️ Rain Ended').setDescription(`Nobody reacted! **${amount}** ${COIN_EMOJI} refunded to <@${senderId}>.`)] });
       }
-
       const per = Math.floor(amount / reactors.length);
       if (per < 1) {
-        await rainMsg.reply({ embeds: [new EmbedBuilder().setColor(0xED4245).setTitle('🌧️ Rain Ended').setDescription(`Too many reactors for the pool! **${amount}** ${COIN_EMOJI} refunded to <@${senderId}>.`)] });
-        return;
+        return rainMsg.reply({ embeds: [new EmbedBuilder().setColor(0xED4245).setTitle('🌧️ Rain Ended').setDescription(`Too many reactors! **${amount}** ${COIN_EMOJI} refunded to <@${senderId}>.`)] });
       }
-
       const totalGiven = per * reactors.length;
       const senderUser = await getUser(senderId, senderName);
       senderUser.coins = Math.max(0, senderUser.coins - totalGiven);
       await saveUser(senderUser);
-
       const names = [];
       for (const reactor of reactors) {
         const u = await getUser(reactor.id, reactor.username);
@@ -693,14 +651,12 @@ async function cmdRain(msgOrInteraction, guild, senderId, senderName, amount) {
         await saveUser(u);
         names.push(`<@${reactor.id}>`);
       }
-
       await rainMsg.reply({ embeds: [new EmbedBuilder()
         .setColor(0x57F287)
         .setTitle('🌧️ Rain Finished!')
         .setDescription(
           `<@${senderId}> rained **${totalGiven}** ${COIN_EMOJI} across **${reactors.length}** member(s)!\n` +
-          `Each received **${per}** ${COIN_EMOJI}\n\n` +
-          `**Winners:** ${names.join(' ')}`
+          `Each received **${per}** ${COIN_EMOJI}\n\n**Winners:** ${names.join(' ')}`
         )] });
     } catch (e) { console.error('Rain end error:', e.message); }
   }, RAIN_DURATION);
@@ -711,29 +667,18 @@ async function cmdRain(msgOrInteraction, guild, senderId, senderName, amount) {
 // ══════════════════════════════════════════
 client.on('interactionCreate', async interaction => {
 
-  // ── MODAL SUBMIT ──────────────────────────
+  // MODAL SUBMIT
   if (interaction.isModalSubmit()) {
     if (!interaction.customId.startsWith('claim_modal_')) return;
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-
     const claimId = interaction.customId.replace('claim_modal_', '');
     const u       = await getUser(interaction.user.id, interaction.user.username);
     const inv     = u.inventory || [];
     const idx     = inv.findIndex(i => i.claimId === claimId);
     if (idx === -1) return interaction.editReply({ embeds: [errEmbed('Item not found in your inventory.')] });
-
     const item         = inv[idx];
     const robloxUser   = interaction.fields.getTextInputValue('roblox_username').trim();
     const gamepassLink = item.category === 'Robux' ? interaction.fields.getTextInputValue('gamepass_link').trim() : null;
-
-    // Verify stock before accepting the claim
-    const store = await getStore();
-    if (item.category === 'Robux' && store.robux < item.robuxAmt)
-      return interaction.editReply({ embeds: [errEmbed(`Not enough Robux in stock right now (need **${item.robuxAmt}**, have **${store.robux}**). Contact an admin.`)] });
-    if (item.id === 'etfb_cel' && store.celestials <= 0)
-      return interaction.editReply({ embeds: [errEmbed('Celestials are out of stock! Contact an admin.')] });
-    if (item.id === 'etfb_div' && store.divines <= 0)
-      return interaction.editReply({ embeds: [errEmbed('Divines are out of stock! Contact an admin.')] });
 
     const claims    = await getClaims();
     const claimsArr = Array.isArray(claims) ? claims : [];
@@ -751,7 +696,6 @@ client.on('interactionCreate', async interaction => {
       status:         'pending',
     });
     await saveClaims(claimsArr);
-
     u.inventory.splice(idx, 1);
     await saveUser(u);
 
@@ -792,59 +736,46 @@ client.on('interactionCreate', async interaction => {
       return await cmdRedeem(p => interaction.editReply(p), me.id, me.username, interaction.options.getString('item'));
     }
 
-    // /claim — show modal
     if (cmd === 'claim') {
       const idArg = interaction.options.getString('id').toUpperCase();
       const u     = await getUser(me.id, me.username);
       const item  = (u.inventory || []).find(i => i.claimId === idArg);
       if (!item) return reply({ embeds: [errEmbed(`No item with ID \`${idArg}\` in your inventory. Use \`/inventory\` to check.`)], flags: MessageFlags.Ephemeral });
-
       const modal = new ModalBuilder().setCustomId(`claim_modal_${item.claimId}`).setTitle(`Claim: ${item.name}`);
       modal.addComponents(new ActionRowBuilder().addComponents(
-        new TextInputBuilder().setCustomId('roblox_username')
-          .setLabel('Your Roblox Username')
-          .setStyle(TextInputStyle.Short)
-          .setPlaceholder('e.g. Builderman')
-          .setRequired(true)
+        new TextInputBuilder().setCustomId('roblox_username').setLabel('Your Roblox Username')
+          .setStyle(TextInputStyle.Short).setPlaceholder('e.g. Builderman').setRequired(true)
       ));
       if (item.category === 'Robux') {
-        const rbxAmt = item.robuxAmt || 0;
         modal.addComponents(new ActionRowBuilder().addComponents(
           new TextInputBuilder().setCustomId('gamepass_link')
-            .setLabel(`Gamepass Link (set price to ${rbxAmt} Robux)`)
-            .setStyle(TextInputStyle.Short)
-            .setPlaceholder('https://www.roblox.com/game-pass/...')
-            .setRequired(true)
+            .setLabel(`Gamepass Link (set price to ${item.robuxAmt || 0} Robux)`)
+            .setStyle(TextInputStyle.Short).setPlaceholder('https://www.roblox.com/game-pass/...').setRequired(true)
         ));
       }
       return interaction.showModal(modal);
     }
 
-    // /claims — embed list of pending claims
     if (cmd === 'claims') {
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       const allClaims = await getClaims();
-      const pending   = (Array.isArray(allClaims) ? allClaims : []).filter(c => c.status === 'pending' && c.status !== 'denied' && c.status !== 'fulfilled');
-      if (!pending.length) {
-        return interaction.editReply({ embeds: [new EmbedBuilder().setColor(0x57F287).setTitle('📋 Pending Claims').setDescription('No pending claims right now!')] });
-      }
+      const pending   = (Array.isArray(allClaims) ? allClaims : []).filter(c => c.status === 'pending');
+      if (!pending.length) return interaction.editReply({ embeds: [new EmbedBuilder().setColor(0x57F287).setTitle('📋 Pending Claims').setDescription('No pending claims!')] });
 
       const fields = pending.map(c => ({
         name:  `${c.claimId} — ${c.itemName}`,
         value: `👤 **${c.username}**  ·  Roblox: \`${c.robloxUsername}\`\n` +
                (c.gamepassLink ? `🔗 ${c.gamepassLink}\n` : '') +
-               `📅 ${ts(c.claimedAt, 'R')} (${ts(c.claimedAt, 'f')})`,
+               `📅 ${ts(c.claimedAt, 'R')}`,
         inline: false,
       }));
 
-      // Max 10 fields per embed to keep it clean
       const chunks = [];
       for (let i = 0; i < fields.length; i += 10) chunks.push(fields.slice(i, i + 10));
-
       for (let i = 0; i < chunks.length; i++) {
         const embed = new EmbedBuilder()
           .setColor(0xF1C40F)
-          .setTitle(i === 0 ? `📋 Pending Claims — ${pending.length} total` : '📋 Pending Claims (continued)')
+          .setTitle(i === 0 ? `📋 Pending Claims — ${pending.length} total` : '📋 (continued)')
           .addFields(chunks[i])
           .setFooter({ text: '/claimed <id>  ·  /deny-claim <id>' });
         if (i === 0) await interaction.editReply({ embeds: [embed] });
@@ -853,19 +784,18 @@ client.on('interactionCreate', async interaction => {
       return;
     }
 
-    // /claimed — fulfil claim + DM user
     if (cmd === 'claimed') {
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       const claimId   = interaction.options.getString('id').toUpperCase();
       const allClaims = await getClaims();
       const claimsArr = Array.isArray(allClaims) ? allClaims : [];
       const idx       = claimsArr.findIndex(c => c.claimId === claimId);
-      if (idx === -1)                              return interaction.editReply({ embeds: [errEmbed(`Claim \`${claimId}\` not found.`)] });
-      if (claimsArr[idx].status === 'fulfilled')   return interaction.editReply({ embeds: [errEmbed(`Claim \`${claimId}\` is already fulfilled.`)] });
-      if (claimsArr[idx].status === 'denied')      return interaction.editReply({ embeds: [errEmbed(`Claim \`${claimId}\` was denied — cannot fulfil.`)] });
+      if (idx === -1)                            return interaction.editReply({ embeds: [errEmbed(`Claim \`${claimId}\` not found.`)] });
+      if (claimsArr[idx].status === 'fulfilled') return interaction.editReply({ embeds: [errEmbed(`Claim \`${claimId}\` is already fulfilled.`)] });
+      if (claimsArr[idx].status === 'denied')    return interaction.editReply({ embeds: [errEmbed(`Claim \`${claimId}\` was denied.`)] });
 
-      const claim              = claimsArr[idx];
-      claimsArr[idx].status    = 'fulfilled';
+      const claim = claimsArr[idx];
+      claimsArr[idx].status      = 'fulfilled';
       claimsArr[idx].fulfilledAt = Date.now();
       claimsArr[idx].fulfilledBy = me.username;
       await saveClaims(claimsArr);
@@ -878,9 +808,7 @@ client.on('interactionCreate', async interaction => {
       try {
         const target = await client.users.fetch(claim.userId);
         await target.send({ embeds: [new EmbedBuilder()
-          .setColor(0x57F287)
-          .setTitle('🎉 Reward Delivered!')
-          .setDescription(`✅ ${dmText}`)
+          .setColor(0x57F287).setTitle('🎉 Reward Delivered!').setDescription(`✅ ${dmText}`)
           .addFields(
             { name: 'Claim ID', value: `\`${claimId}\``,    inline: true },
             { name: 'Item',     value: claim.itemName,       inline: true },
@@ -889,87 +817,67 @@ client.on('interactionCreate', async interaction => {
         dmSent = true;
       } catch (e) { console.error('DM failed:', e.message); }
 
-      // Notify claimer publicly in the channel
+      // Public channel announcement
       try {
         await interaction.channel.send({ embeds: [new EmbedBuilder()
-          .setColor(0x57F287)
-          .setTitle('🎉 Claim Fulfilled!')
+          .setColor(0x57F287).setTitle('🎉 Claim Fulfilled!')
           .setDescription(
             `<@${claim.userId}> your claim **${claimId}** for **${claim.itemName}** has been fulfilled by <@${me.id}>!\n` +
             (claim.category === 'Robux'
               ? `Check your Roblox gamepass — the Robux have been sent!`
               : `Accept the friend request from **vru4447** on Roblox to receive your reward!`)
           )] });
-      } catch { /* no channel access */ }
+      } catch { /* no access */ }
 
-      // Send vouch request to the vouch channel
+      // Vouch request
       try {
         const vouchCh = await client.channels.fetch(VOUCH_CHANNEL_ID);
         if (vouchCh) {
           await vouchCh.send({
             content: `<@${claim.userId}>`,
             embeds: [new EmbedBuilder()
-              .setColor(0x5865F2)
-              .setTitle('⭐ Please Leave a Vouch!')
+              .setColor(0x5865F2).setTitle('⭐ Please Leave a Vouch!')
               .setDescription(
-                `Hey <@${claim.userId}>! You just received **${claim.itemName}** — we hope everything went smoothly! 🎉\n\n` +
+                `Hey <@${claim.userId}>! You just received **${claim.itemName}** — hope everything went smoothly! 🎉\n\n` +
                 `Please leave a vouch so others know we're legit!\n\n` +
                 `**Format:**\n\`Vouch @${me.username} <your reason>\``
               )
               .setFooter({ text: `Claim ${claimId} · Fulfilled by ${me.username}` })] });
 
-          // Set a 10-minute timer — if they haven't vouched, DM them + alert channel
           const vouchTimeout = setTimeout(async () => {
             pendingVouches.delete(claim.userId);
-            // DM the user
             try {
               const vouchTarget = await client.users.fetch(claim.userId);
               await vouchTarget.send({ embeds: [new EmbedBuilder()
-                .setColor(0xFEE75C)
-                .setTitle('⭐ Dont forget to vouch!')
+                .setColor(0xFEE75C).setTitle('⭐ Don\'t forget to vouch!')
                 .setDescription(
                   `You received **${claim.itemName}** but haven't left a vouch yet!\n\n` +
-                  `Head to <#${VOUCH_CHANNEL_ID}> and type:\n\`Vouch @${me.username} <your reason>\`\n\n` +
-                  `It only takes a second and helps the community a lot! 🙏`
+                  `Head to <#${VOUCH_CHANNEL_ID}> and type:\n\`Vouch @${me.username} <your reason>\`\n\nIt only takes a second! 🙏`
                 )] });
             } catch { /* DMs closed */ }
-            // Alert the admin channel
             try {
               const alertCh = await client.channels.fetch(ALERT_CHANNEL_ID);
-              if (alertCh) {
-                await alertCh.send({ embeds: [new EmbedBuilder()
-                  .setColor(0xED4245)
-                  .setTitle('⚠️ Vouch Not Received')
-                  .setDescription(
-                    `<@${claim.userId}> has not vouched after receiving **${claim.itemName}** (claim \`${claimId}\`).\n` +
-                    `A reminder DM has been sent to them.`
-                  )] });
-              }
+              if (alertCh) await alertCh.send({ embeds: [new EmbedBuilder()
+                .setColor(0xED4245).setTitle('⚠️ Vouch Not Received')
+                .setDescription(`<@${claim.userId}> has not vouched after receiving **${claim.itemName}** (claim \`${claimId}\`). A reminder DM was sent.`)] });
             } catch (e) { console.error('Alert channel error:', e.message); }
-          }, 10 * 60 * 1000); // 10 minutes
+          }, 10 * 60 * 1000);
 
-          pendingVouches.set(claim.userId, {
-            claimId,
-            itemName:    claim.itemName,
-            fulfilledBy: me.username,
-            timeout:     vouchTimeout,
-          });
+          pendingVouches.set(claim.userId, { claimId, itemName: claim.itemName, fulfilledBy: me.username, timeout: vouchTimeout });
         }
-      } catch (e) { console.error('Vouch channel send error:', e.message); }
+      } catch (e) { console.error('Vouch channel error:', e.message); }
 
       return interaction.editReply({ embeds: [new EmbedBuilder()
-        .setColor(0x57F287)
-        .setTitle('✅ Claim Fulfilled')
+        .setColor(0x57F287).setTitle('✅ Claim Fulfilled')
         .addFields(
-          { name: 'Claim ID', value: `\`${claimId}\``,                              inline: true },
-          { name: 'User',     value: `<@${claim.userId}>`,                           inline: true },
-          { name: 'Roblox',   value: claim.robloxUsername,                           inline: true },
-          { name: 'Item',     value: claim.itemName,                                 inline: true },
-          { name: 'DM',       value: dmSent ? '✅ Sent' : '❌ DMs disabled',         inline: true }
+          { name: 'Claim ID', value: `\`${claimId}\``,                       inline: true },
+          { name: 'User',     value: `<@${claim.userId}>`,                    inline: true },
+          { name: 'Roblox',   value: claim.robloxUsername,                    inline: true },
+          { name: 'Item',     value: claim.itemName,                          inline: true },
+          { name: 'DM',       value: dmSent ? '✅ Sent' : '❌ DMs disabled', inline: true }
         )] });
     }
 
-    // /deny-claim — deny + refund item back to inventory + restore stock
     if (cmd === 'deny-claim') {
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       const claimId   = interaction.options.getString('id').toUpperCase();
@@ -977,62 +885,48 @@ client.on('interactionCreate', async interaction => {
       const claimsArr = Array.isArray(allClaims) ? allClaims : [];
       const idx       = claimsArr.findIndex(c => c.claimId === claimId);
       if (idx === -1)                            return interaction.editReply({ embeds: [errEmbed(`Claim \`${claimId}\` not found.`)] });
-      if (claimsArr[idx].status === 'fulfilled') return interaction.editReply({ embeds: [errEmbed(`Claim \`${claimId}\` is already fulfilled — cannot deny.`)] });
+      if (claimsArr[idx].status === 'fulfilled') return interaction.editReply({ embeds: [errEmbed(`Claim \`${claimId}\` is already fulfilled.`)] });
       if (claimsArr[idx].status === 'denied')    return interaction.editReply({ embeds: [errEmbed(`Claim \`${claimId}\` is already denied.`)] });
 
-      const claim            = claimsArr[idx];
-      claimsArr[idx].status  = 'denied';
+      const claim = claimsArr[idx];
+      claimsArr[idx].status   = 'denied';
       claimsArr[idx].deniedAt = Date.now();
       claimsArr[idx].deniedBy = me.username;
       await saveClaims(claimsArr);
 
-      // Refund item to user's inventory
       const shopItem = SHOP.find(i => i.id === claim.itemId);
-      const u        = await getUser(claim.userId, claim.username);
-      u.inventory.push({
-        claimId:  claim.claimId,
-        itemId:   claim.itemId,
-        name:     claim.itemName,
-        category: claim.category,
-        robuxAmt: claim.robuxAmt || 0,
-        cost:     shopItem ? shopItem.cost : 0,
-      });
+      const u = await getUser(claim.userId, claim.username);
+      u.inventory.push({ claimId: claim.claimId, itemId: claim.itemId, name: claim.itemName, category: claim.category, robuxAmt: claim.robuxAmt || 0, cost: shopItem ? shopItem.cost : 0 });
       await saveUser(u);
 
-      // Restore stock
       const store = await getStore();
-      if      (claim.category === 'Robux')       store.robux      += (claim.robuxAmt || 0);
-      else if (claim.itemId   === 'etfb_cel')    store.celestials += 1;
-      else if (claim.itemId   === 'etfb_div')    store.divines    += 1;
+      if      (claim.category === 'Robux')     store.robux      += (claim.robuxAmt || 0);
+      else if (claim.itemId   === 'etfb_cel')  store.celestials += 1;
+      else if (claim.itemId   === 'etfb_div')  store.divines    += 1;
       await saveStore(store);
       await updateStockEmbed(client);
 
-      // DM the user
       let dmSent = false;
       try {
         const target = await client.users.fetch(claim.userId);
         await target.send({ embeds: [new EmbedBuilder()
-          .setColor(0xED4245)
-          .setTitle('❌ Claim Denied')
+          .setColor(0xED4245).setTitle('❌ Claim Denied')
           .setDescription(
             `Your claim \`${claimId}\` for **${claim.itemName}** was denied by an admin.\n\n` +
-            `The item has been returned to your inventory — use \`/inventory\` to see it.\n` +
-            `You can re-submit with \`/claim ${claimId}\` whenever stock is available.`
+            `The item has been returned to your inventory.\nUse \`/claim ${claimId}\` to re-submit when ready.`
           )] });
         dmSent = true;
       } catch (e) { console.error('Deny DM failed:', e.message); }
 
       return interaction.editReply({ embeds: [new EmbedBuilder()
-        .setColor(0xED4245)
-        .setTitle('❌ Claim Denied')
+        .setColor(0xED4245).setTitle('❌ Claim Denied')
         .addFields(
-          { name: 'Claim ID',   value: `\`${claimId}\``,                              inline: true },
-          { name: 'User',       value: `<@${claim.userId}>`,                           inline: true },
-          { name: 'Roblox',     value: claim.robloxUsername,                           inline: true },
-          { name: 'Item',       value: claim.itemName,                                 inline: true },
-          { name: 'Refunded',   value: '✅ Item back in inventory',                    inline: true },
-          { name: 'Stock',      value: '✅ Restored',                                  inline: true },
-          { name: 'DM',         value: dmSent ? '✅ Sent' : '❌ DMs disabled',         inline: true }
+          { name: 'Claim ID', value: `\`${claimId}\``,                       inline: true },
+          { name: 'User',     value: `<@${claim.userId}>`,                    inline: true },
+          { name: 'Item',     value: claim.itemName,                          inline: true },
+          { name: 'Refunded', value: '✅ Item back in inventory',              inline: true },
+          { name: 'Stock',    value: '✅ Restored',                            inline: true },
+          { name: 'DM',       value: dmSent ? '✅ Sent' : '❌ DMs disabled', inline: true }
         )] });
     }
 
@@ -1054,15 +948,11 @@ client.on('interactionCreate', async interaction => {
       const t       = interaction.options.getUser('user');
       const claimId = interaction.options.getString('claim_id').toUpperCase();
       const u       = await getUser(t.id, t.username);
-      const inv     = u.inventory || [];
-      if (!inv.length) return reply({ embeds: [errEmbed(`<@${t.id}> has an empty inventory.`)], flags: MessageFlags.Ephemeral });
-      const idx = inv.findIndex(i => i.claimId === claimId);
-      if (idx === -1) return reply({ embeds: [errEmbed(`No item with claim ID \`${claimId}\` in <@${t.id}>'s inventory.`)], flags: MessageFlags.Ephemeral });
-      const removed = inv.splice(idx, 1)[0];
+      const idx     = (u.inventory || []).findIndex(i => i.claimId === claimId);
+      if (idx === -1) return reply({ embeds: [errEmbed(`No item \`${claimId}\` in <@${t.id}>'s inventory.`)], flags: MessageFlags.Ephemeral });
+      const removed = u.inventory.splice(idx, 1)[0];
       await saveUser(u);
-      return reply({ embeds: [new EmbedBuilder()
-        .setColor(0xED4245)
-        .setTitle('🗑️ Item Removed')
+      return reply({ embeds: [new EmbedBuilder().setColor(0xED4245).setTitle('🗑️ Item Removed')
         .setDescription(`Removed **${removed.name}** (\`${claimId}\`) from <@${t.id}>'s inventory.`)] });
     }
     if (cmd === 'check-inventory') {
@@ -1072,32 +962,24 @@ client.on('interactionCreate', async interaction => {
       if (!inv.length) return reply({ embeds: [new EmbedBuilder().setColor(0xFEE75C).setDescription(`🎒 <@${t.id}>'s inventory is empty.`)], flags: MessageFlags.Ephemeral });
       const list = inv.map(item => {
         const emoji = item.category === 'Robux' ? '💎' : item.name === 'Divine' ? '🌟' : '✨';
-        return `${emoji} **${item.name}** — Claim ID: \`${item.claimId}\``;
+        return `${emoji} **${item.name}** — \`${item.claimId}\``;
       }).join('\n');
-      return reply({ embeds: [new EmbedBuilder()
-        .setTitle(`🎒 ${t.username}'s Inventory`)
-        .setColor(0x9B59B6)
-        .setDescription(list)
-        .setFooter({ text: `${inv.length} item(s)` })], flags: MessageFlags.Ephemeral });
+      return reply({ embeds: [new EmbedBuilder().setTitle(`🎒 ${t.username}'s Inventory`).setColor(0x9B59B6)
+        .setDescription(list).setFooter({ text: `${inv.length} item(s)` })], flags: MessageFlags.Ephemeral });
     }
     if (cmd === 'update-robux') {
       await interaction.deferReply();
-      const amt   = interaction.options.getInteger('amount');
-      const store = await getStore();
-      store.robux = amt;
-      await saveStore(store);
-      await updateStockEmbed(client);
+      const amt = interaction.options.getInteger('amount');
+      const store = await getStore(); store.robux = amt;
+      await saveStore(store); await updateStockEmbed(client);
       return interaction.editReply({ embeds: [new EmbedBuilder().setColor(0x57F287).setTitle('✅ Stock Updated').setDescription(`💎 Robux stock set to **${amt}**.`)] });
     }
     if (cmd === 'update-etfb') {
       await interaction.deferReply();
-      const type  = interaction.options.getString('type'), amt = interaction.options.getInteger('amount');
-      const store = await getStore();
-      store[type] = amt;
-      await saveStore(store);
-      await updateStockEmbed(client);
-      const label = type === 'divines' ? '🌟 Divines' : '✨ Celestials';
-      return interaction.editReply({ embeds: [new EmbedBuilder().setColor(0x57F287).setTitle('✅ Stock Updated').setDescription(`${label} set to **${amt}x**.`)] });
+      const type = interaction.options.getString('type'), amt = interaction.options.getInteger('amount');
+      const store = await getStore(); store[type] = amt;
+      await saveStore(store); await updateStockEmbed(client);
+      return interaction.editReply({ embeds: [new EmbedBuilder().setColor(0x57F287).setTitle('✅ Stock Updated').setDescription(`${type === 'divines' ? '🌟 Divines' : '✨ Celestials'} set to **${amt}x**.`)] });
     }
 
   } catch (e) {
