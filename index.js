@@ -264,10 +264,10 @@ const client = new Client({
 
 // ══════════════════════════════════════════
 //  SPAM DETECTION
-//  5+ consecutive messages in a channel (no real human in between) = penalty
+//  15+ consecutive messages in a channel without anyone else talking = -100 coins
 // ══════════════════════════════════════════
 const channelLastMsg = new Map(); // Map<channelId, { lastUserId, count }>
-const spamCooldown   = new Set(); // users currently immune from repeat penalty
+const spamCooldown   = new Set(); // prevents double-penalising within 60s
 
 async function handleSpamCheck(msg) {
   const { id: uid, username } = msg.author;
@@ -278,13 +278,14 @@ async function handleSpamCheck(msg) {
   if (state.lastUserId === uid) {
     state.count += 1;
   } else {
+    // A different real human spoke — reset this channel's streak
     state.lastUserId = uid;
     state.count = 1;
   }
   channelLastMsg.set(cid, state);
 
-  // Trigger at exactly 5 consecutive messages and only once per 60s per user
-  if (state.count === 5 && !spamCooldown.has(uid)) {
+  // Penalise at exactly 15 consecutive messages
+  if (state.count === 15 && !spamCooldown.has(uid)) {
     spamCooldown.add(uid);
     setTimeout(() => spamCooldown.delete(uid), 60_000);
 
@@ -304,7 +305,7 @@ async function handleSpamCheck(msg) {
     try {
       await msg.author.send({ embeds: [new EmbedBuilder()
         .setColor(0xED4245)
-        .setTitle('Warning!')
+        .setTitle('⚠️ Spam Warning!')
         .setDescription(
           `You have been caught spamming in <#${cid}>.
 
@@ -320,7 +321,7 @@ async function handleSpamCheck(msg) {
     try {
       const warn = await msg.channel.send({ embeds: [new EmbedBuilder()
         .setColor(0xED4245)
-        .setDescription(`<@${uid}> stop spamming! **100** <:CoinEmoji:1481246827448766526> have been deducted from your balance.`)] });
+        .setDescription(`⚠️ <@${uid}> stop spamming! **100** <:CoinEmoji:1481246827448766526> have been deducted from your balance.`)] });
       setTimeout(() => warn.delete().catch(() => {}), 8000);
     } catch { /* no perms */ }
   }
@@ -803,7 +804,7 @@ client.on('interactionCreate', async interaction => {
     if (cmd === 'claims') {
       await interaction.deferReply({ ephemeral: true });
       const allClaims = await getClaims();
-      const pending   = (Array.isArray(allClaims) ? allClaims : []).filter(c => c.status === 'pending');
+      const pending   = (Array.isArray(allClaims) ? allClaims : []).filter(c => c.status === 'pending' && c.status !== 'denied' && c.status !== 'fulfilled');
       if (!pending.length) {
         return interaction.editReply({ embeds: [new EmbedBuilder().setColor(0x57F287).setTitle('📋 Pending Claims').setDescription('No pending claims right now!')] });
       }
@@ -867,6 +868,20 @@ client.on('interactionCreate', async interaction => {
           )] });
         dmSent = true;
       } catch (e) { console.error('DM failed:', e.message); }
+
+      // Also notify the claimer publicly in the channel if possible
+      try {
+        await interaction.channel.send({ embeds: [new EmbedBuilder()
+          .setColor(0x57F287)
+          .setTitle('🎉 Claim Fulfilled!')
+          .setDescription(
+            `<@${claim.userId}> your claim **${claimId}** for **${claim.itemName}** has been fulfilled by <@${me.id}>!
+` +
+            (claim.category === 'Robux'
+              ? `Check your Roblox gamepass — the Robux have been sent!`
+              : `Accept the friend request from **vru4447** on Roblox to receive your reward!`)
+          )] });
+      } catch { /* no channel access */ }
 
       return interaction.editReply({ embeds: [new EmbedBuilder()
         .setColor(0x57F287)
