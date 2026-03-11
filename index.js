@@ -1,17 +1,145 @@
-require('dotenv').config();
-const fs = require('fs');
 const {
-  Client,
-  GatewayIntentBits,
-  PermissionFlagsBits,
-  Events,
-  EmbedBuilder,
-  ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle,
-  StringSelectMenuBuilder,
+  Client, GatewayIntentBits, REST, Routes,
+  SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits
 } = require('discord.js');
+const fs   = require('fs');
+const path = require('path');
+require('dotenv').config();
 
+// ══════════════════════════════════════════
+//  CONFIG
+// ══════════════════════════════════════════
+const STOCK_CHANNEL_ID = '1481026325178220565';
+const COIN_PER_MSG     = 1;
+const MSG_COOLDOWN_MS  = 10_000;
+
+const SHOP = [
+  { id: 'robux_25',  name: '25 Robux',        cost: 100, category: 'Robux', emoji: '💎' },
+  { id: 'robux_50',  name: '50 Robux',         cost: 175, category: 'Robux', emoji: '💎' },
+  { id: 'robux_100', name: '100 Robux',        cost: 300, category: 'Robux', emoji: '💎' },
+  { id: 'etfb_inv',  name: '1 ETFB Inv',       cost: 100, category: 'ETFB', emoji: '🎁' },
+  { id: 'etfb_cel',  name: 'Celestial (ETFB)', cost: 100, category: 'ETFB', emoji: '✨' },
+  { id: 'etfb_div',  name: 'Divine (ETFB)',    cost: 250, category: 'ETFB', emoji: '🌟' },
+];
+
+// ══════════════════════════════════════════
+//  DATABASE
+// ══════════════════════════════════════════
+const DATA_DIR = path.join(__dirname, 'data');
+const USERS_F  = path.join(DATA_DIR, 'users.json');
+const STORE_F  = path.join(DATA_DIR, 'store.json');
+const MSGID_F  = path.join(DATA_DIR, 'msgid.json');
+
+if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+
+function readJSON(file, def) {
+  if (!fs.existsSync(file)) { fs.writeFileSync(file, JSON.stringify(def, null, 2)); return def; }
+  try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return def; }
+}
+function writeJSON(file, data) { fs.writeFileSync(file, JSON.stringify(data, null, 2)); }
+
+function getUser(userId, username) {
+  const db = readJSON(USERS_F, {});
+  if (!db[userId]) {
+    db[userId] = { id: userId, username: username || 'Unknown', coins: 0, totalEarned: 0, lastDaily: null, lastWork: null, inventory: [], createdAt: Date.now() };
+    writeJSON(USERS_F, db);
+  }
+  return db[userId];
+}
+function saveUser(user) { const db = readJSON(USERS_F, {}); db[user.id] = user; writeJSON(USERS_F, db); }
+function getLeaderboard(n) { return Object.values(readJSON(USERS_F, {})).sort((a, b) => b.coins - a.coins).slice(0, n); }
+function getStore()        { return readJSON(STORE_F, { robux: 0, divines: 0, celestials: 0 }); }
+function saveStore(s)      { writeJSON(STORE_F, s); }
+function getMsgId()        { return readJSON(MSGID_F, { id: null }).id; }
+function setMsgId(id)      { writeJSON(MSGID_F, { id }); }
+
+// ══════════════════════════════════════════
+//  HELPERS
+// ══════════════════════════════════════════
+function fmt(ms) {
+  const s = Math.floor(ms/1000), m = Math.floor(s/60), h = Math.floor(m/60);
+  return h > 0 ? `${h}h ${m%60}m` : m > 0 ? `${m}m ${s%60}s` : `${s}s`;
+}
+
+function buildStockEmbed() {
+  const s = getStore();
+  return new EmbedBuilder()
+    .setTitle('🏪 Current Stock')
+    .setColor(0x5865F2)
+    .setDescription('Redeem your coins for rewards below!')
+    .addFields(
+      { name: '💎 Robux',           value: s.robux      > 0 ? `**${s.robux}R** available`       : '❌ Out of stock', inline: true },
+      { name: '✨ ETFB Celestials', value: s.celestials > 0 ? `**${s.celestials}x** available`  : '❌ Out of stock', inline: true },
+      { name: '🌟 ETFB Divines',   value: s.divines    > 0 ? `**${s.divines}x** available`     : '❌ Out of stock', inline: true },
+      {
+        name: '📋 Exchange Rates',
+        value:
+          '💎 **25 Robux** → 100 coins\n' +
+          '💎 **50 Robux** → 175 coins\n' +
+          '💎 **100 Robux** → 300 coins\n' +
+          '🎁 **1 ETFB Inv** → 100 coins\n' +
+          '✨ **Celestial** → 100 coins\n' +
+          '🌟 **Divine** → 250 coins',
+        inline: false
+      }
+    )
+    .setFooter({ text: 'Stock updated by admins • /shop to see all items' })
+    .setTimestamp();
+}
+
+async function updateStockMessage(client) {
+  try {
+    const ch = await client.channels.fetch(STOCK_CHANNEL_ID);
+    if (!ch) return;
+    const embed = buildStockEmbed();
+    const existingId = getMsgId();
+    if (existingId) {
+      try { const m = await ch.messages.fetch(existingId); await m.edit({ embeds: [embed] }); return; }
+      catch { /* deleted — fall through to send new */ }
+    }
+    const sent = await ch.send({ embeds: [embed] });
+    setMsgId(sent.id);
+  } catch (e) { console.error('Stock embed error:', e.message); }
+}
+
+// ══════════════════════════════════════════
+//  COMMAND DEFINITIONS
+// ══════════════════════════════════════════
+const commands = [
+  new SlashCommandBuilder().setName('balance').setDescription('Check coin balance').addUserOption(o => o.setName('user').setDescription('User to check').setRequired(false)),
+  new SlashCommandBuilder().setName('daily').setDescription('Claim 50 coins (24h cooldown)'),
+  new SlashCommandBuilder().setName('work').setDescription('Work a job for coins (1h cooldown)'),
+  new SlashCommandBuilder().setName('coinflip').setDescription('Bet coins on a flip!').addIntegerOption(o => o.setName('amount').setDescription('Coins to bet').setRequired(true).setMinValue(1)),
+  new SlashCommandBuilder().setName('rain').setDescription('Rain coins on random members!').addIntegerOption(o => o.setName('amount').setDescription('Total coins to rain').setRequired(true).setMinValue(10)),
+  new SlashCommandBuilder().setName('shop').setDescription('View all rewards'),
+  new SlashCommandBuilder().setName('redeem').setDescription('Redeem coins for a reward').addStringOption(o =>
+    o.setName('item').setDescription('Item to redeem').setRequired(true).addChoices(
+      { name: '💎 25 Robux (100 coins)',      value: 'robux_25'  },
+      { name: '💎 50 Robux (175 coins)',       value: 'robux_50'  },
+      { name: '💎 100 Robux (300 coins)',      value: 'robux_100' },
+      { name: '🎁 1 ETFB Inv (100 coins)',     value: 'etfb_inv'  },
+      { name: '✨ Celestial ETFB (100 coins)', value: 'etfb_cel'  },
+      { name: '🌟 Divine ETFB (250 coins)',    value: 'etfb_div'  }
+    )
+  ),
+  new SlashCommandBuilder().setName('inventory').setDescription('View your redeemed rewards'),
+  new SlashCommandBuilder().setName('leaderboard').setDescription('Top 10 richest members'),
+  new SlashCommandBuilder().setName('give').setDescription('[ADMIN] Give coins to a user').setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+    .addUserOption(o => o.setName('user').setDescription('Target').setRequired(true))
+    .addIntegerOption(o => o.setName('amount').setDescription('Amount').setRequired(true).setMinValue(1)),
+  new SlashCommandBuilder().setName('take').setDescription('[ADMIN] Take coins from a user').setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+    .addUserOption(o => o.setName('user').setDescription('Target').setRequired(true))
+    .addIntegerOption(o => o.setName('amount').setDescription('Amount').setRequired(true).setMinValue(1)),
+  new SlashCommandBuilder().setName('update-robux').setDescription('[ADMIN] Update Robux stock').setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+    .addIntegerOption(o => o.setName('amount').setDescription('New Robux amount in stock').setRequired(true).setMinValue(0)),
+  new SlashCommandBuilder().setName('update-etfb').setDescription('[ADMIN] Update ETFB stock').setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+    .addStringOption(o => o.setName('type').setDescription('Which item').setRequired(true).addChoices({ name: 'Divines', value: 'divines' }, { name: 'Celestials', value: 'celestials' }))
+    .addIntegerOption(o => o.setName('amount').setDescription('New amount in stock').setRequired(true).setMinValue(0)),
+].map(c => c.toJSON());
+
+// ══════════════════════════════════════════
+//  CLIENT
+// ══════════════════════════════════════════
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -22,279 +150,192 @@ const client = new Client({
   ],
 });
 
-/* ===================================================
-   DATABASE & CONFIGURATION
-=================================================== */
-const DB_FILE = './db.json';
-let db = { warns: {}, levels: {}, afk: {} };
+const msgCooldowns = new Map();
 
-if (fs.existsSync(DB_FILE)) {
+client.once('ready', async () => {
+  console.log(`✅ Logged in as ${client.user.tag}`);
+  const rest = new REST({ version: '10' }).setToken(process.env.BOT_TOKEN);
   try {
-    db = JSON.parse(fs.readFileSync(DB_FILE));
+    await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
+    console.log('✅ Slash commands registered');
+  } catch (e) { console.error('Command registration error:', e); }
+  await updateStockMessage(client);
+});
+
+// +1 coin per message (10s cooldown)
+client.on('messageCreate', msg => {
+  if (msg.author.bot || !msg.guild) return;
+  const now = Date.now();
+  if (msgCooldowns.has(msg.author.id) && now - msgCooldowns.get(msg.author.id) < MSG_COOLDOWN_MS) return;
+  msgCooldowns.set(msg.author.id, now);
+  const u = getUser(msg.author.id, msg.author.username);
+  u.coins += COIN_PER_MSG;
+  u.totalEarned = (u.totalEarned || 0) + COIN_PER_MSG;
+  saveUser(u);
+});
+
+client.on('interactionCreate', async interaction => {
+  if (!interaction.isChatInputCommand()) return;
+  const { commandName: cmd } = interaction;
+  const inv = interaction.user;
+
+  try {
+
+    // /balance
+    if (cmd === 'balance') {
+      const t = interaction.options.getUser('user') || inv;
+      const u = getUser(t.id, t.username);
+      return await interaction.reply({ embeds: [new EmbedBuilder().setTitle(`🪙 ${t.username}'s Balance`).setColor(0xF1C40F).setThumbnail(t.displayAvatarURL())
+        .addFields({ name: '💰 Coins', value: `**${u.coins.toLocaleString()}**`, inline: true }, { name: '📈 Total Earned', value: `${(u.totalEarned||0).toLocaleString()}`, inline: true }, { name: '🎒 Inventory', value: `${(u.inventory||[]).length} items`, inline: true }).setTimestamp()] });
+    }
+
+    // /daily
+    if (cmd === 'daily') {
+      const u = getUser(inv.id, inv.username);
+      const cd = 24 * 60 * 60 * 1000, now = Date.now();
+      if (u.lastDaily && now - u.lastDaily < cd)
+        return await interaction.reply({ embeds: [new EmbedBuilder().setColor(0xED4245).setDescription(`⏰ Come back in **${fmt(cd-(now-u.lastDaily))}** for your daily!`)], ephemeral: true });
+      u.coins += 50; u.totalEarned = (u.totalEarned||0) + 50; u.lastDaily = now; saveUser(u);
+      return await interaction.reply({ embeds: [new EmbedBuilder().setColor(0x57F287).setTitle('🎁 Daily Claimed!').setDescription(`You received **50 coins**!\nBalance: **${u.coins.toLocaleString()} coins**`).setTimestamp()] });
+    }
+
+    // /work
+    if (cmd === 'work') {
+      const u = getUser(inv.id, inv.username);
+      const cd = 60 * 60 * 1000, now = Date.now();
+      if (u.lastWork && now - u.lastWork < cd)
+        return await interaction.reply({ embeds: [new EmbedBuilder().setColor(0xED4245).setDescription(`⏰ Too tired! Work again in **${fmt(cd-(now-u.lastWork))}**`)], ephemeral: true });
+      const jobs = [
+        { name: 'Pizza Delivery', r: [15,35], e: '🍕' }, { name: 'Dog Walker', r: [10,30], e: '🐕' },
+        { name: 'Streamer',       r: [20,50], e: '🎮' }, { name: 'Trader',     r: [25,60], e: '📈' },
+        { name: 'YouTuber',       r: [30,70], e: '📹' }, { name: 'Miner',      r: [15,40], e: '⛏️'  },
+        { name: 'Hacker',         r: [35,75], e: '💻' }, { name: 'Chef',       r: [20,45], e: '👨‍🍳' },
+        { name: 'Fisherman',      r: [10,35], e: '🎣' },
+      ];
+      const job = jobs[Math.floor(Math.random() * jobs.length)];
+      const earned = Math.floor(Math.random() * (job.r[1]-job.r[0]+1)) + job.r[0];
+      u.coins += earned; u.totalEarned = (u.totalEarned||0) + earned; u.lastWork = now; saveUser(u);
+      return await interaction.reply({ embeds: [new EmbedBuilder().setColor(0x57F287).setTitle(`${job.e} Work Complete!`).setDescription(`You worked as a **${job.name}** and earned **${earned} coins**!\nBalance: **${u.coins.toLocaleString()} coins**`).setTimestamp()] });
+    }
+
+    // /coinflip
+    if (cmd === 'coinflip') {
+      const amount = interaction.options.getInteger('amount');
+      const u = getUser(inv.id, inv.username);
+      if (u.coins < amount) return await interaction.reply({ embeds: [new EmbedBuilder().setColor(0xED4245).setDescription(`❌ You only have **${u.coins} coins**!`)], ephemeral: true });
+      const win = Math.random() < 0.5;
+      u.coins += win ? amount : -amount;
+      if (win) u.totalEarned = (u.totalEarned||0) + amount;
+      saveUser(u);
+      return await interaction.reply({ embeds: [new EmbedBuilder().setColor(win ? 0x57F287 : 0xED4245).setTitle(win ? '🟡 Heads — You Win!' : '⚫ Tails — You Lose!').setDescription(win ? `Won **${amount} coins**! 🎉\nBalance: **${u.coins.toLocaleString()}**` : `Lost **${amount} coins**. 💸\nBalance: **${u.coins.toLocaleString()}**`).setTimestamp()] });
+    }
+
+    // /rain
+    if (cmd === 'rain') {
+      const amount = interaction.options.getInteger('amount');
+      const sender = getUser(inv.id, inv.username);
+      if (sender.coins < amount) return await interaction.reply({ embeds: [new EmbedBuilder().setColor(0xED4245).setDescription(`❌ You only have **${sender.coins} coins**!`)], ephemeral: true });
+      await interaction.guild.members.fetch();
+      const pool  = [...interaction.guild.members.cache.filter(m => !m.user.bot && m.user.id !== inv.id).values()];
+      const picks = pool.sort(() => 0.5 - Math.random()).slice(0, Math.min(5, pool.length));
+      if (!picks.length) return await interaction.reply({ embeds: [new EmbedBuilder().setColor(0xED4245).setDescription('❌ No eligible members!')], ephemeral: true });
+      const per = Math.floor(amount / picks.length);
+      sender.coins -= per * picks.length; saveUser(sender);
+      const names = picks.map(m => { const u = getUser(m.user.id, m.user.username); u.coins += per; u.totalEarned = (u.totalEarned||0)+per; saveUser(u); return `<@${m.user.id}>`; });
+      return await interaction.reply({ embeds: [new EmbedBuilder().setColor(0x3498DB).setTitle('🌧️ Coin Rain!').setDescription(`<@${inv.id}> rained **${per*picks.length} coins** across **${picks.length} members**!\nEach got **${per} coins**: ${names.join(' ')}`).setTimestamp()] });
+    }
+
+    // /shop
+    if (cmd === 'shop') {
+      return await interaction.reply({ embeds: [new EmbedBuilder().setTitle('🏪 Rewards Shop').setColor(0x9B59B6)
+        .setDescription('Use `/redeem <item>` to purchase!')
+        .addFields(
+          { name: '💎 Robux', value: SHOP.filter(i=>i.category==='Robux').map(i=>`${i.emoji} **${i.name}** — \`${i.cost} coins\``).join('\n'), inline: true },
+          { name: '🎁 ETFB',  value: SHOP.filter(i=>i.category==='ETFB').map(i=>`${i.emoji} **${i.name}** — \`${i.cost} coins\``).join('\n'), inline: true },
+          { name: '💡 Earning coins', value: '💬 1 message = 1 coin\n📅 `/daily` = 50 coins\n💼 `/work` = 10–75 coins\n🪙 `/coinflip` = double or nothing', inline: false }
+        ).setTimestamp()] });
+    }
+
+    // /redeem
+    if (cmd === 'redeem') {
+      const itemId = interaction.options.getString('item');
+      const item   = SHOP.find(i => i.id === itemId);
+      const u      = getUser(inv.id, inv.username);
+      if (!item) return await interaction.reply({ content: '❌ Invalid item.', ephemeral: true });
+      if (u.coins < item.cost) return await interaction.reply({ embeds: [new EmbedBuilder().setColor(0xED4245).setDescription(`❌ Need **${item.cost} coins**, you have **${u.coins}**!`)], ephemeral: true });
+      const store = getStore();
+      if (itemId === 'etfb_cel' && store.celestials <= 0) return await interaction.reply({ embeds: [new EmbedBuilder().setColor(0xED4245).setDescription('❌ Celestials are out of stock!')], ephemeral: true });
+      if (itemId === 'etfb_div' && store.divines    <= 0) return await interaction.reply({ embeds: [new EmbedBuilder().setColor(0xED4245).setDescription('❌ Divines are out of stock!')],    ephemeral: true });
+      if (itemId.startsWith('robux') && store.robux <= 0) return await interaction.reply({ embeds: [new EmbedBuilder().setColor(0xED4245).setDescription('❌ Robux is out of stock!')],       ephemeral: true });
+      if (itemId === 'etfb_cel')       store.celestials = Math.max(0, store.celestials - 1);
+      else if (itemId === 'etfb_div')  store.divines    = Math.max(0, store.divines - 1);
+      else if (itemId === 'robux_25')  store.robux      = Math.max(0, store.robux - 25);
+      else if (itemId === 'robux_50')  store.robux      = Math.max(0, store.robux - 50);
+      else if (itemId === 'robux_100') store.robux      = Math.max(0, store.robux - 100);
+      saveStore(store);
+      await updateStockMessage(client);
+      u.coins -= item.cost;
+      u.inventory = u.inventory || [];
+      u.inventory.push({ itemId, name: item.name, cost: item.cost, claimedAt: Date.now() });
+      saveUser(u);
+      return await interaction.reply({ embeds: [new EmbedBuilder().setColor(0x57F287).setTitle(`${item.emoji} Redeemed!`).setDescription(`Redeemed **${item.name}** for **${item.cost} coins**!\nBalance: **${u.coins.toLocaleString()} coins**\n\n📩 An admin will deliver your reward shortly!`).setTimestamp()] });
+    }
+
+    // /inventory
+    if (cmd === 'inventory') {
+      const u   = getUser(inv.id, inv.username);
+      const inv2 = u.inventory || [];
+      if (!inv2.length) return await interaction.reply({ embeds: [new EmbedBuilder().setColor(0xED4245).setDescription('🎒 Inventory is empty! Use `/redeem` to get rewards.')], ephemeral: true });
+      const list = inv2.slice(-10).reverse().map((item, i) => `**${i+1}.** ${item.name} — <t:${Math.floor(item.claimedAt/1000)}:R>`).join('\n');
+      return await interaction.reply({ embeds: [new EmbedBuilder().setColor(0x9B59B6).setTitle(`🎒 ${inv.username}'s Inventory`).setDescription(list).setFooter({ text: `Last ${Math.min(10,inv2.length)} of ${inv2.length} items` }).setTimestamp()] });
+    }
+
+    // /leaderboard
+    if (cmd === 'leaderboard') {
+      const top    = getLeaderboard(10);
+      const medals = ['🥇','🥈','🥉'];
+      const list   = top.map((u, i) => `${medals[i]||`**${i+1}.**`} <@${u.id}> — **${u.coins.toLocaleString()} coins**`).join('\n');
+      return await interaction.reply({ embeds: [new EmbedBuilder().setColor(0xF1C40F).setTitle('🏆 Coin Leaderboard').setDescription(list||'No data yet!').setTimestamp()] });
+    }
+
+    // /give
+    if (cmd === 'give') {
+      const t = interaction.options.getUser('user'), amount = interaction.options.getInteger('amount');
+      const u = getUser(t.id, t.username);
+      u.coins += amount; u.totalEarned = (u.totalEarned||0)+amount; saveUser(u);
+      return await interaction.reply({ embeds: [new EmbedBuilder().setColor(0x57F287).setDescription(`✅ Gave **${amount} coins** to <@${t.id}>. Balance: **${u.coins.toLocaleString()}**`)] });
+    }
+
+    // /take
+    if (cmd === 'take') {
+      const t = interaction.options.getUser('user'), amount = interaction.options.getInteger('amount');
+      const u = getUser(t.id, t.username);
+      u.coins = Math.max(0, u.coins - amount); saveUser(u);
+      return await interaction.reply({ embeds: [new EmbedBuilder().setColor(0xED4245).setDescription(`✅ Took **${amount} coins** from <@${t.id}>. Balance: **${u.coins.toLocaleString()}**`)] });
+    }
+
+    // /update-robux
+    if (cmd === 'update-robux') {
+      const amount = interaction.options.getInteger('amount');
+      const store  = getStore(); store.robux = amount; saveStore(store);
+      await updateStockMessage(client);
+      return await interaction.reply({ embeds: [new EmbedBuilder().setColor(0x57F287).setTitle('✅ Stock Updated').setDescription(`💎 Robux stock set to **${amount}R**. Embed refreshed.`).setTimestamp()] });
+    }
+
+    // /update-etfb
+    if (cmd === 'update-etfb') {
+      const type = interaction.options.getString('type'), amount = interaction.options.getInteger('amount');
+      const store = getStore(); store[type] = amount; saveStore(store);
+      await updateStockMessage(client);
+      const label = type === 'divines' ? '🌟 Divines' : '✨ Celestials';
+      return await interaction.reply({ embeds: [new EmbedBuilder().setColor(0x57F287).setTitle('✅ Stock Updated').setDescription(`${label} set to **${amount}x**. Embed refreshed.`).setTimestamp()] });
+    }
+
   } catch (e) {
-    console.error("DB Error: Starting fresh.");
-  }
-}
-
-function saveDB() {
-  fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2));
-}
-
-const WELCOME_CHANNEL_ID = process.env.WELCOME_CHANNEL_ID;
-const GOODBYE_CHANNEL_ID = process.env.GOODBYE_CHANNEL_ID;
-const LEVEL_CHANNEL_ID = '1471140563951550575';
-const LOG_CHANNEL_ID = '1471145714074517716';
-const ADMIN_ROLE_KEYWORDS = ['admin', 'mod', 'head mod', 'head admin', 'trial mod'];
-
-const TICKET_CATEGORIES = [
-  { label: 'Giveaway Claim', value: 'giveaway', emoji: '🎁', categoryId: '1471149589624262819' },
-  { label: 'Rewards Claim', value: 'rewards', emoji: '💰', categoryId: '1471148112092332104' },
-  { label: 'Buying an Item', value: 'buying', emoji: '🛒', categoryId: '1471149666409250849' },
-  { label: 'Hosting a Giveaway', value: 'hosting', emoji: '🎉', categoryId: '1471149637103517924' },
-  { label: 'Support', value: 'support', emoji: '🛠️', categoryId: '1471148191658541186' },
-  { label: 'Report', value: 'report', emoji: '🚩', categoryId: '1471149536197218407' },
-];
-
-/* ===================================================
-   HELPERS & LOGS
-=================================================== */
-function isStaff(member) {
-  if (!member) return false;
-  const hasAdminPerm = member.permissions.has(PermissionFlagsBits.Administrator);
-  const hasStaffRole = member.roles.cache.some(r => 
-    ADMIN_ROLE_KEYWORDS.some(k => r.name.toLowerCase().includes(k))
-  );
-  return hasAdminPerm || hasStaffRole;
-}
-
-// Leveling formula: base * (level ^ 1.7) for harder scaling toward level 50
-function getRequiredXP(level) {
-  return Math.floor(300 * Math.pow(level, 1.7));
-}
-
-async function sendLog(title, description, color = 'Blue', user = null) {
-  const channel = await client.channels.fetch(LOG_CHANNEL_ID).catch(() => null);
-  if (!channel) return;
-  const embed = new EmbedBuilder().setTitle(title).setDescription(description).setColor(color).setTimestamp();
-  if (user) embed.setFooter({ text: `Target: ${user.tag}`, iconURL: user.displayAvatarURL() });
-  channel.send({ embeds: [embed] });
-}
-
-function parseDuration(str) {
-  const match = str.match(/^(\d+)([smhd])$/);
-  if (!match) return null;
-  const multi = { s: 1000, m: 60000, h: 3600000, d: 86400000 };
-  return parseInt(match[1]) * multi[match[2]];
-}
-
-function getHelpEmbed() {
-  return new EmbedBuilder()
-    .setTitle('🛡️ Advanced Staff Command Menu')
-    .setDescription('Full command suite for Administrators and authorized Staff roles.')
-    .setColor('Gold')
-    .addFields(
-      { name: '🛠️ Setup', value: '`/setup` or `#setup` - Send the Ticket Panel Embed.\n`/help` or `#help` - View this menu.' },
-      { name: '🔨 Moderation', value: '`/warn`, `/unwarn` - Warning system (Saved in DB)\n`/mute`, `/unmute` - Timouts (up to 28 days)\n`/kick`, `/ban` - Server removal commands' },
-      { name: '🎫 Tickets', value: '`#ticket rename` - Only works in ticket channels.\n`#ticket close` - Remove member access.\n`#ticket delete` - 5s deletion countdown.' },
-      { name: '⭐ Systems', value: '`Leveling` - Global XP with scaling difficulty (Harder XP per level).\n`AFK` - Use `#afk [reason]` to set status.\n`Logs` - Every edit/delete/mod action is logged.' }
-    );
-}
-
-/* ===================================================
-   READY / SLASH COMMANDS
-=================================================== */
-client.once(Events.ClientReady, async () => {
-  console.log(`Bot Online: ${client.user.tag}`);
-  await client.application.commands.set([
-    { name: 'setup', description: 'Deploy the ticket panel' },
-    { name: 'help', description: 'Show staff command help' },
-    { name: 'warn', description: 'Warn a user', options: [{ name: 'user', type: 6, required: true, description: 'User' }, { name: 'reason', type: 3, description: 'Reason' }] },
-    { name: 'unwarn', description: 'Remove last warning', options: [{ name: 'user', type: 6, required: true, description: 'User' }] },
-    { name: 'kick', description: 'Kick a member', options: [{ name: 'user', type: 6, required: true, description: 'User' }, { name: 'reason', type: 3, description: 'Reason' }] },
-    { name: 'ban', description: 'Ban a member', options: [{ name: 'user', type: 6, required: true, description: 'User' }, { name: 'reason', type: 3, description: 'Reason' }] },
-    { name: 'mute', description: 'Timeout user', options: [{ name: 'user', type: 6, required: true, description: 'User' }, { name: 'duration', type: 3, required: true, description: '10m, 1h, 1d' }, { name: 'reason', type: 3, description: 'Reason' }] },
-    { name: 'unmute', description: 'Remove timeout', options: [{ name: 'user', type: 6, required: true, description: 'User' }] },
-  ]);
-});
-
-/* ===================================================
-   SYSTEM EVENTS (LOGS / CHATting)
-=================================================== */
-client.on(Events.MessageDelete, async msg => {
-  if (!msg.guild || msg.author?.bot) return;
-  sendLog('🗑️ Message Deleted', `**User:** ${msg.author.tag}\n**Channel:** ${msg.channel}\n**Content:** ${msg.content || 'No text'}`, 'Red');
-});
-
-client.on(Events.MessageUpdate, async (oldM, newM) => {
-  if (!newM.guild || newM.author?.bot || oldM.content === newM.content) return;
-  sendLog('📝 Message Edited', `**User:** ${newM.author.tag}\n**Channel:** ${newM.channel}\n**Old:** ${oldM.content}\n**New:** ${newM.content}`, 'Orange');
-});
-
-/* ===================================================
-   INTERACTION HANDLING
-=================================================== */
-client.on(Events.InteractionCreate, async i => {
-  try {
-    if (i.isChatInputCommand()) {
-      if (!isStaff(i.member)) return i.reply({ content: '❌ Staff Only!', ephemeral: true });
-      await i.deferReply({ ephemeral: true });
-
-      const user = i.options.getUser('user');
-      const reason = i.options.getString('reason') || 'No reason';
-      const member = user ? await i.guild.members.fetch(user.id).catch(() => null) : null;
-
-      if (i.commandName === 'help') return i.editReply({ embeds: [getHelpEmbed()] });
-
-      if (i.commandName === 'setup') {
-        const row = new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('ticket_menu').setPlaceholder('Select Category').addOptions(TICKET_CATEGORIES.map(c => ({ label: c.label, value: c.value, emoji: c.emoji }))));
-        const embed = new EmbedBuilder().setTitle('🎫 Create a Ticket').setDescription('Select a category below to open a ticket.').setColor('Blue');
-        return i.editReply({ embeds: [embed], components: [row] });
-      }
-
-      if (i.commandName === 'warn') {
-        db.warns[user.id] = (db.warns[user.id] || 0) + 1;
-        saveDB();
-        sendLog('⚠️ User Warned', `**Target:** ${user.tag}\n**Staff:** ${i.user.tag}\n**Reason:** ${reason}\n**Total Warns:** ${db.warns[user.id]}`, 'Yellow', user);
-        return i.editReply(`⚠️ Warned ${user.tag}. (Total: ${db.warns[user.id]})`);
-      }
-
-      if (i.commandName === 'unwarn') {
-        if (!db.warns[user.id]) return i.editReply('❌ No warns found.');
-        db.warns[user.id]--;
-        saveDB();
-        sendLog('✅ Warning Removed', `**Target:** ${user.tag}\n**Staff:** ${i.user.tag}`, 'Green', user);
-        return i.editReply(`✅ Removed 1 warn from ${user.tag}.`);
-      }
-
-      if (i.commandName === 'kick') {
-        if (!member?.kickable) return i.editReply('❌ Cannot kick.');
-        await member.kick(reason);
-        sendLog('👢 Member Kicked', `**Target:** ${user.tag}\n**Staff:** ${i.user.tag}\n**Reason:** ${reason}`, 'Orange', user);
-        return i.editReply(`👢 Kicked ${user.tag}.`);
-      }
-
-      if (i.commandName === 'ban') {
-        if (member && !member.bannable) return i.editReply('❌ Cannot ban.');
-        await i.guild.members.ban(user.id, { reason });
-        sendLog('🔨 Member Banned', `**Target:** ${user.tag}\n**Staff:** ${i.user.tag}\n**Reason:** ${reason}`, 'DarkRed', user);
-        return i.editReply(`🔨 Banned ${user.tag}.`);
-      }
-
-      if (i.commandName === 'mute') {
-        const ms = parseDuration(i.options.getString('duration'));
-        if (!ms || !member) return i.editReply('❌ Invalid duration.');
-        await member.timeout(ms, reason);
-        sendLog('🔇 Member Muted', `**Target:** ${user.tag}\n**Staff:** ${i.user.tag}\n**Duration:** ${i.options.getString('duration')}`, 'Grey', user);
-        return i.editReply(`🔇 Muted ${user.tag}.`);
-      }
-
-      if (i.commandName === 'unmute') {
-        if (member) await member.timeout(null);
-        return i.editReply(`🔊 Unmuted ${user.tag}.`);
-      }
-    }
-
-    if (i.isStringSelectMenu() && i.customId === 'ticket_menu') {
-      await i.deferReply({ ephemeral: true });
-      const cat = TICKET_CATEGORIES.find(c => c.value === i.values[0]);
-      const ch = await i.guild.channels.create({
-        name: `ticket-${i.user.username}`, parent: cat.categoryId,
-        permissionOverwrites: [{ id: i.guild.id, deny: [PermissionFlagsBits.ViewChannel] }, { id: i.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] }]
-      });
-      await ch.send(`Hello <@${i.user.id}>, welcome to your **${cat.label}** ticket.`);
-      return i.editReply(`✅ Ticket: ${ch}`);
-    }
-  } catch (err) { console.error(err); }
-});
-
-/* ===================================================
-   TEXT COMMANDS, LEVELS & AFK
-=================================================== */
-client.on(Events.MessageCreate, async m => {
-  if (m.author.bot || !m.guild) return;
-
-  // AFK Logic
-  if (db.afk[m.author.id]) {
-    delete db.afk[m.author.id]; saveDB();
-    m.member.setNickname(m.member.displayName.replace('[AFK] ', '')).catch(() => {});
-    m.reply('👋 Welcome back! Removed AFK status.').then(x => setTimeout(() => x.delete(), 3000));
-  }
-  m.mentions.users.forEach(u => { if (db.afk[u.id]) m.reply(`💤 **${u.username}** is AFK: ${db.afk[u.id]}`); });
-
-  // Leveling System with Scaling
-  const uid = m.author.id;
-  if (!db.levels[uid]) db.levels[uid] = { xp: 0, lvl: 1 };
-  db.levels[uid].xp += Math.floor(Math.random() * 10) + 10;
-
-  if (db.levels[uid].xp >= getRequiredXP(db.levels[uid].lvl)) {
-    db.levels[uid].lvl++;
-    const lvCh = await client.channels.fetch(LEVEL_CHANNEL_ID).catch(() => null);
-    if (lvCh) lvCh.send(`⬆️ **${m.author.username}** leveled up! You are now **Level ${db.levels[uid].lvl}**!\n*XP needed for next level: ${getRequiredXP(db.levels[uid].lvl)}*`);
-  }
-  saveDB();
-
-  // AFK Command
-  if (m.content.startsWith('#afk')) {
-    const reason = m.content.split(' ').slice(1).join(' ') || 'Away';
-    db.afk[m.author.id] = reason;
-    m.member.setNickname(`[AFK] ${m.member.displayName}`).catch(() => {});
-    saveDB();
-    return m.reply(`💤 You are now AFK: ${reason}`);
-  }
-
-  // Staff Only Text Commands
-  if (isStaff(m.member)) {
-    if (m.content.toLowerCase() === '#help') return m.channel.send({ embeds: [getHelpEmbed()] });
-
-    if (m.content.toLowerCase() === '#setup') {
-      const row = new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('ticket_menu').setPlaceholder('Select Category').addOptions(TICKET_CATEGORIES.map(c => ({ label: c.label, value: c.value, emoji: c.emoji }))));
-      const embed = new EmbedBuilder().setTitle('🎫 Create a Ticket').setDescription('Select a category below.').setColor('Blue');
-      return m.channel.send({ embeds: [embed], components: [row] });
-    }
-
-    if (m.content.startsWith('#ticket')) {
-      const args = m.content.split(' ');
-      const sub = args[1];
-
-      // Restrict rename to ONLY ticket categories
-      const isTicket = TICKET_CATEGORIES.some(c => c.categoryId === m.channel.parentId);
-
-      if (sub === 'rename') {
-        if (!isTicket) return m.reply("❌ This command only works inside ticket channels.");
-        const name = args.slice(2).join('-');
-        if (name) await m.channel.setName(name);
-        return m.reply(`✅ Renamed to \`${name}\``);
-      }
-      if (sub === 'close') {
-        m.channel.permissionOverwrites.cache.filter(o => o.type === 1).forEach(o => m.channel.permissionOverwrites.edit(o.id, { ViewChannel: false }));
-        return m.reply('🔒 Ticket Locked.');
-      }
-      if (sub === 'delete') {
-        let s = 5; const msg = await m.reply(`🗑️ Deleting in **${s}**...`);
-        const i = setInterval(async () => {
-          if (--s <= 0) { clearInterval(i); await m.channel.delete(); }
-          else msg.edit(`🗑️ Deleting in **${s}**...`).catch(() => {});
-        }, 1000);
-      }
-    }
+    console.error(`/${cmd} error:`, e);
+    const err = { embeds: [new EmbedBuilder().setColor(0xED4245).setDescription('❌ Something went wrong!')], ephemeral: true };
+    interaction.replied || interaction.deferred ? await interaction.followUp(err) : await interaction.reply(err);
   }
 });
 
-/* ===================================================
-   WELCOME / GOODBYE
-=================================================== */
-client.on(Events.GuildMemberAdd, async member => {
-  const ch = await client.channels.fetch(WELCOME_CHANNEL_ID).catch(() => null);
-  if (!ch) return;
-  const embed = new EmbedBuilder().setTitle('👋 Welcome!').setDescription(`Welcome <@${member.id}> to **${member.guild.name}**!`).setColor('#00FF00').setThumbnail(member.user.displayAvatarURL());
-  ch.send({ embeds: [embed] });
-});
-
-client.on(Events.GuildMemberRemove, async member => {
-  const ch = await client.channels.fetch(GOODBYE_CHANNEL_ID).catch(() => null);
-  if (!ch) return;
-  const embed = new EmbedBuilder().setTitle('😢 Goodbye!').setDescription(`**${member.user.tag}** has left the server.`).setColor('#FF0000').setThumbnail(member.user.displayAvatarURL());
-  ch.send({ embeds: [embed] });
-});
-
-client.login(process.env.DISCORD_TOKEN);
+client.login(process.env.BOT_TOKEN);
