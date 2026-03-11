@@ -16,7 +16,7 @@ require('dotenv').config();
 const STOCK_CHANNEL_ID = '1481026325178220565';
 const VOUCH_CHANNEL_ID = '1481321672970735807';
 const ALERT_CHANNEL_ID = '1480833457604268154';
-const GUILD_ID         = process.env.GUILD_ID;
+const GUILD_ID         = (process.env.GUILD_ID || '').trim();
 const JSONBIN_KEY      = process.env.JSONBIN_KEY;
 const PREFIX           = 'u!';
 
@@ -322,7 +322,7 @@ function scheduleCoinFlush() {
 // ══════════════════════════════════════════
 client.once('ready', async () => {
   console.log(`Bot online: ${client.user.tag}`);
-  console.log(`GUILD_ID:    ${GUILD_ID    ? 'SET' : '*** MISSING ***'}`);
+  console.log(`GUILD_ID:    ${GUILD_ID    ? `SET (${GUILD_ID})` : '*** MISSING ***'}`);
   console.log(`JSONBIN_KEY: ${JSONBIN_KEY ? 'SET' : '*** MISSING ***'}`);
 
   if (!GUILD_ID)    { console.error('FATAL: GUILD_ID not set'); process.exit(1); }
@@ -344,9 +344,14 @@ client.once('ready', async () => {
     }
 
     // 3. Register fresh to target guild only — instant, no duplicates
-    await rest.put(Routes.applicationGuildCommands(client.user.id, GUILD_ID), { body: slashDefs });
-    console.log(`✅ Registered ${slashDefs.length} slash commands to guild ${GUILD_ID}`);
-  } catch (e) { console.error('Command registration error:', e); }
+    console.log(`Registering ${slashDefs.length} commands to guild: "${GUILD_ID}" (len=${GUILD_ID.length})`);
+    const result = await rest.put(Routes.applicationGuildCommands(client.user.id, GUILD_ID), { body: slashDefs });
+    console.log(`✅ Registered ${result.length} slash commands to guild ${GUILD_ID}`);
+  } catch (e) {
+    console.error('Command registration error:', e.message);
+    if (e.rawError) console.error('Raw error:', JSON.stringify(e.rawError, null, 2));
+    if (e.status)   console.error('HTTP status:', e.status);
+  }
 
   // ── Warm caches ──────────────────────────
   try { await dbRead('users'); console.log('Users cache warmed'); }
