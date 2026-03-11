@@ -242,6 +242,13 @@ const slashDefs = [
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
     .addUserOption(o => o.setName('user').setDescription('Target').setRequired(true))
     .addIntegerOption(o => o.setName('amount').setDescription('Amount').setRequired(true).setMinValue(1)),
+  new SlashCommandBuilder().setName('remove-inv').setDescription('[ADMIN] Remove an item from a user inventory by claim ID')
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+    .addUserOption(o => o.setName('user').setDescription('Target user').setRequired(true))
+    .addStringOption(o => o.setName('claim_id').setDescription('Claim ID to remove, e.g. C1').setRequired(true)),
+  new SlashCommandBuilder().setName('check-inventory').setDescription('[ADMIN] View any user inventory')
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+    .addUserOption(o => o.setName('user').setDescription('Target user').setRequired(true)),
 ].map(c => c.toJSON());
 
 // ══════════════════════════════════════════
@@ -328,7 +335,7 @@ client.on('messageCreate', async msg => {
     if (cmd === 'daily')                          return await cmdDaily(reply, uid, msg.author.username);
     if (cmd === 'shop')                           return await cmdShop(reply);
     if (cmd === 'inventory')                      return await cmdInventory(reply, uid, msg.author.username);
-    if (cmd === 'lb' || cmd === 'leaderboard')    return await cmdLeaderboard(reply);
+    if (cmd === 'lb' || cmd === 'leaderboard')    return await cmdLeaderboard(reply, msg.guild);
     if (cmd === 'help')                           return await cmdHelp(reply);
     if (cmd === 'adminhelp' && isAdmin)           return await cmdAdminHelp(reply);
     if (cmd === 'coinflip' || cmd === 'cf') {
@@ -471,11 +478,19 @@ async function cmdInventory(reply, userId, username) {
 }
 
 // LEADERBOARD
-async function cmdLeaderboard(reply) {
-  const top    = await getLeaderboard(10);
-  const medals = ['🥇', '🥈', '🥉'];
-  const list   = top.map((u, i) => `${medals[i] || `**${i + 1}.**`} <@${u.id}> — **${u.coins.toLocaleString()}** ${COIN_EMOJI}`).join('\n');
-  return reply({ embeds: [new EmbedBuilder().setTitle('🏆 Coin Leaderboard').setColor(0xF1C40F).setDescription(list || 'No data yet!')] });
+async function cmdLeaderboard(reply, guild) {
+  const top    = await getLeaderboard(50);
+  const medals = ["🥇", "🥈", "🥉"];
+  const filtered = [];
+  for (const u of top) {
+    if (filtered.length >= 10) break;
+    try {
+      const member = await guild.members.fetch(u.id);
+      if (!member.permissions.has(PermissionFlagsBits.Administrator)) filtered.push(u);
+    } catch { /* user left server — skip */ }
+  }
+  const list = filtered.map((u, i) => `${medals[i] || `**${i + 1}.**`} <@${u.id}> — **${u.coins.toLocaleString()}** ${COIN_EMOJI}`).join("\n");
+  return reply({ embeds: [new EmbedBuilder().setTitle("🏆 Coin Leaderboard").setColor(0xF1C40F).setDescription(list || "No data yet!")] });
 }
 
 // HELP
@@ -697,7 +712,7 @@ client.on('interactionCreate', async interaction => {
     if (cmd === 'daily')       return await cmdDaily(reply, me.id, me.username);
     if (cmd === 'shop')        return await cmdShop(reply);
     if (cmd === 'inventory')   return await cmdInventory(reply, me.id, me.username);
-    if (cmd === 'leaderboard') return await cmdLeaderboard(reply);
+    if (cmd === 'leaderboard') return await cmdLeaderboard(reply, interaction.guild);
     if (cmd === 'help')        return await cmdHelp(reply);
     if (cmd === 'adminhelp')   return await cmdAdminHelp(reply);
     if (cmd === 'coinflip')    return await cmdCoinflip(reply, me.id, me.username, interaction.options.getInteger('amount'));
@@ -902,6 +917,36 @@ client.on('interactionCreate', async interaction => {
       u.coins = Math.max(0, u.coins - amt);
       await saveUser(u);
       return reply({ embeds: [okEmbed(`Took **${amt}** ${COIN_EMOJI} from <@${t.id}>. Balance: **${u.coins.toLocaleString()}** ${COIN_EMOJI}`)] });
+    }
+    if (cmd === 'remove-inv') {
+      const t       = interaction.options.getUser('user');
+      const claimId = interaction.options.getString('claim_id').toUpperCase();
+      const u       = await getUser(t.id, t.username);
+      const inv     = u.inventory || [];
+      if (!inv.length) return reply({ embeds: [errEmbed(`<@${t.id}> has an empty inventory.`)], ephemeral: true });
+      const idx = inv.findIndex(i => i.claimId === claimId);
+      if (idx === -1) return reply({ embeds: [errEmbed(`No item with claim ID \`${claimId}\` in <@${t.id}>'s inventory.`)], ephemeral: true });
+      const removed = inv.splice(idx, 1)[0];
+      await saveUser(u);
+      return reply({ embeds: [new EmbedBuilder()
+        .setColor(0xED4245)
+        .setTitle('🗑️ Item Removed')
+        .setDescription(`Removed **${removed.name}** (\`${claimId}\`) from <@${t.id}>'s inventory.`)] });
+    }
+    if (cmd === 'check-inventory') {
+      const t   = interaction.options.getUser('user');
+      const u   = await getUser(t.id, t.username);
+      const inv = u.inventory || [];
+      if (!inv.length) return reply({ embeds: [new EmbedBuilder().setColor(0xFEE75C).setDescription(`🎒 <@${t.id}>'s inventory is empty.`)], ephemeral: true });
+      const list = inv.map(item => {
+        const emoji = item.category === 'Robux' ? '💎' : item.name === 'Divine' ? '🌟' : '✨';
+        return `${emoji} **${item.name}** — Claim ID: \`${item.claimId}\``;
+      }).join('\n');
+      return reply({ embeds: [new EmbedBuilder()
+        .setTitle(`🎒 ${t.username}'s Inventory`)
+        .setColor(0x9B59B6)
+        .setDescription(list)
+        .setFooter({ text: `${inv.length} item(s)` })], ephemeral: true });
     }
     if (cmd === 'update-robux') {
       await interaction.deferReply();
