@@ -18,7 +18,6 @@ const VOUCH_CHANNEL_ID = '1481321672970735807';
 const ALERT_CHANNEL_ID = '1480833457604268154';
 const GUILD_ID         = (process.env.GUILD_ID || '').trim();
 const JSONBIN_KEY      = process.env.JSONBIN_KEY;
-const PREFIX           = 'u!';
 
 const COIN_EMOJI = '<:CoinEmoji:1481246827448766526>';
 
@@ -261,7 +260,6 @@ const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent,
     GatewayIntentBits.GuildMembers,
     GatewayIntentBits.GuildMessageReactions,
   ],
@@ -336,18 +334,28 @@ client.once('clientReady', async () => {
   await updateStockEmbed(client);
   console.log('✅ Ready — all systems go');
 
-  // ── Register slash commands LAST so nothing blocks it ──
+  // ── Register slash commands via raw fetch (avoids REST client issues) ──
   console.log('Attempting command registration...');
   try {
-    const rest = new REST({ version: '10' }).setToken(process.env.BOT_TOKEN);
-    const result = await rest.put(
-      Routes.applicationGuildCommands(client.user.id, GUILD_ID),
-      { body: slashDefs }
+    const res = await fetch(
+      `https://discord.com/api/v10/applications/${client.user.id}/guilds/${GUILD_ID}/commands`,
+      {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bot ${process.env.BOT_TOKEN}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(slashDefs),
+      }
     );
-    console.log(`✅ Registered ${result.length} slash commands`);
+    const json = await res.json();
+    if (res.ok) {
+      console.log(`✅ Registered ${json.length} slash commands`);
+    } else {
+      console.error('Command reg failed:', JSON.stringify(json));
+    }
   } catch (e) {
-    console.error('Command reg failed — status:', e.status, '— message:', e.message);
-    if (e.rawError) console.error('rawError:', JSON.stringify(e.rawError));
+    console.error('Command reg error:', e.message);
   }
 });
 
@@ -389,54 +397,6 @@ client.on('messageCreate', async msg => {
     }).catch(e => console.error('Coin user error:', e.message));
   }
 
-  // Prefix commands
-  if (!msg.content.startsWith(PREFIX)) return;
-  const args    = msg.content.slice(PREFIX.length).trim().split(/\s+/);
-  const cmd     = args.shift().toLowerCase();
-  const reply   = p => msg.reply(p);
-  const isAdmin = msg.member?.permissions.has(PermissionFlagsBits.Administrator);
-
-  try {
-    if (cmd === 'balance' || cmd === 'bal')     return await cmdBalance(reply, msg.mentions.users.first() || msg.author);
-    if (cmd === 'daily')                        return await cmdDaily(reply, uid, msg.author.username);
-    if (cmd === 'shop')                         return await cmdShop(reply);
-    if (cmd === 'inventory')                    return await cmdInventory(reply, uid, msg.author.username);
-    if (cmd === 'lb' || cmd === 'leaderboard')  return await cmdLeaderboard(reply, msg.guild);
-    if (cmd === 'help')                         return await cmdHelp(reply);
-    if (cmd === 'adminhelp' && isAdmin)         return await cmdAdminHelp(reply);
-    if (cmd === 'rain' && isAdmin) {
-      const amt = parseInt(args[0]);
-      if (isNaN(amt) || amt < 10) return reply({ embeds: [errEmbed(`Usage: \`${PREFIX}rain <amount>\` (min 10)`)] });
-      return await cmdRain(msg, msg.guild, uid, msg.author.username, amt);
-    }
-    if (cmd === 'redeem') {
-      if (!args[0]) return reply({ embeds: [errEmbed(`Usage: \`${PREFIX}redeem <itemId>\` — see \`${PREFIX}shop\``)] });
-      return await cmdRedeem(reply, uid, msg.author.username, args[0].toLowerCase());
-    }
-    if (cmd === 'use-code') {
-      if (!args[0]) return reply({ embeds: [errEmbed(`Usage: \`${PREFIX}use-code <code>\``)] });
-      return await cmdUseCode(reply, uid, msg.author.username, args[0]);
-    }
-    if (cmd === 'give' && isAdmin) {
-      const t = msg.mentions.users.first(), amt = parseInt(args[1]);
-      if (!t || isNaN(amt) || amt < 1) return reply({ embeds: [errEmbed(`Usage: \`${PREFIX}give @user <amount>\``)] });
-      const u = await getUser(t.id, t.username);
-      u.coins += amt; u.totalEarned = (u.totalEarned || 0) + amt;
-      await saveUser(u);
-      return reply({ embeds: [okEmbed(`Gave **${amt}** ${COIN_EMOJI} to <@${t.id}>. Balance: **${u.coins.toLocaleString()}** ${COIN_EMOJI}`)] });
-    }
-    if (cmd === 'take' && isAdmin) {
-      const t = msg.mentions.users.first(), amt = parseInt(args[1]);
-      if (!t || isNaN(amt) || amt < 1) return reply({ embeds: [errEmbed(`Usage: \`${PREFIX}take @user <amount>\``)] });
-      const u = await getUser(t.id, t.username);
-      u.coins = Math.max(0, u.coins - amt);
-      await saveUser(u);
-      return reply({ embeds: [okEmbed(`Took **${amt}** ${COIN_EMOJI} from <@${t.id}>. Balance: **${u.coins.toLocaleString()}** ${COIN_EMOJI}`)] });
-    }
-  } catch (e) {
-    console.error(`Prefix ${cmd}:`, e);
-    reply({ embeds: [errEmbed('Something went wrong!')] }).catch(() => {});
-  }
 });
 
 // ══════════════════════════════════════════
@@ -493,13 +453,13 @@ async function cmdShop(reply) {
       { name: '💎 Robux', value: robuxLines, inline: false },
       { name: '🎮 ETFB',  value: etfbLines,  inline: false }
     )
-    .setFooter({ text: `Buy: /redeem <id> or ${PREFIX}redeem <id>  |  Then: /claim <id>` })] });
+    .setFooter({ text: 'Buy: /redeem <id>  |  Then: /claim <id>' })] });
 }
 
 async function cmdInventory(reply, userId, username) {
   const u   = await getUser(userId, username);
   const inv = u.inventory || [];
-  if (!inv.length) return reply({ embeds: [errEmbed(`Your inventory is empty! Use \`/redeem\` or \`${PREFIX}redeem <id>\` to buy items.`)] });
+  if (!inv.length) return reply({ embeds: [errEmbed("Your inventory is empty! Use `/redeem` to buy items.")] });
   const list = inv.map(item => {
     const emoji = item.category === 'Robux' ? '💎' : item.name === 'Divine' ? '🌟' : '✨';
     return `${emoji} **${item.name}** — Claim ID: \`${item.claimId}\`\n> Use \`/claim ${item.claimId}\` to submit`;
@@ -528,21 +488,21 @@ async function cmdLeaderboard(reply, guild) {
 
 async function cmdHelp(reply) {
   return reply({ embeds: [new EmbedBuilder()
-    .setTitle(`📖 Help — Prefix: \`${PREFIX}\``)
+    .setTitle('📖 Help')
     .setColor(0x5865F2)
     .addFields(
       { name: '💰 Economy', value:
-          `\`${PREFIX}balance\` / \`${PREFIX}bal\` — check your ${COIN_EMOJI}\n` +
-          `\`${PREFIX}daily\` — 10–15 ${COIN_EMOJI} every 24h\n` +
-          `\`${PREFIX}leaderboard\` — top 10\n` +
+          `/balance — check your ${COIN_EMOJI}\n` +
+          `/daily — 10–15 ${COIN_EMOJI} every 24h\n` +
+          `/leaderboard — top 10\n` +
           `💬 Every message = 1 ${COIN_EMOJI}`, inline: false },
       { name: '🛒 Shop', value:
-          `\`${PREFIX}shop\` — view items & prices\n` +
-          `\`${PREFIX}redeem <id>\` — buy an item\n` +
-          `\`${PREFIX}inventory\` — view your items\n` +
-          `\`/claim <id>\` — submit a delivery claim`, inline: false },
+          `/shop — view items & prices\n` +
+          `/redeem — buy an item\n` +
+          `/inventory — view your items\n` +
+          `/claim <id> — submit a delivery claim`, inline: false },
       { name: '🎟️ Codes', value:
-          `\`/use-code <code>\` or \`${PREFIX}use-code <code>\``, inline: false }
+          `/use-code <code>`, inline: false }
     )] });
 }
 
@@ -561,7 +521,7 @@ async function cmdAdminHelp(reply) {
 
 async function cmdRedeem(reply, userId, username, itemId) {
   const item = SHOP.find(i => i.id === itemId);
-  if (!item) return reply({ embeds: [errEmbed(`Unknown item ID. Use \`${PREFIX}shop\` to see valid IDs.`)] });
+  if (!item) return reply({ embeds: [errEmbed("Unknown item ID. Use `/shop` to see valid IDs.")] });
   const u = await getUser(userId, username);
   if (u.coins < item.cost) return reply({ embeds: [errEmbed(`Need **${item.cost}** ${COIN_EMOJI}, you only have **${u.coins}** ${COIN_EMOJI}!`)] });
   const store = await getStore();
