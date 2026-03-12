@@ -1,17 +1,12 @@
 {
   "name": "discord-economy-bot",
   "version": "1.0.0",
-  "description": "Discord economy bot with coins, shop, Robux & ETFB rewards",
-  "main": "index.js",
-  "scripts": {
-    "start": "node index.js"
-  },
+  "main": "bot.js",
+  "scripts": { "start": "node bot.js" },
   "dependencies": {
     "discord.js": "^14.14.1",
     "dotenv": "^16.3.1",
     "node-fetch": "^2.7.0"
   },
-  "engines": {
-    "node": ">=18.0.0"
-  }
+  "engines": { "node": ">=18.0.0" }
 }
