@@ -269,21 +269,17 @@ client.once('ready', async () => {
   console.log(`✅ Bot online: ${client.user.tag}`);
   if (!GUILD_ID || !JSONBIN_KEY) { console.error('FATAL: missing env vars'); process.exit(1); }
 
-  const CLIENT_ID = (process.env.CLIENT_ID || '').trim();
-  if (!CLIENT_ID) {
-    console.warn('⚠️  CLIENT_ID not set — skipping slash command registration');
-  } else {
-    try {
-      if (GUILD_ID) {
-        await client.application.commands.set(slashDefs, GUILD_ID);
-        console.log(`✅ Registered ${slashDefs.length} guild slash commands`);
-      } else {
-        await client.application.commands.set(slashDefs);
-        console.log(`✅ Registered ${slashDefs.length} global slash commands`);
-      }
-    } catch (e) {
-      console.error('Slash command registration failed:', e.message);
+  try {
+    if (GUILD_ID) {
+      const guild = await client.guilds.fetch(GUILD_ID);
+      await guild.commands.set(slashDefs);
+      console.log(`✅ Registered ${slashDefs.length} guild slash commands to ${GUILD_ID}`);
+    } else {
+      await client.application.commands.set(slashDefs);
+      console.log(`✅ Registered ${slashDefs.length} global slash commands`);
     }
+  } catch (e) {
+    console.error('Slash command registration failed:', e);
   }
 
   try { await dbRead('users'); console.log('✅ Cache warmed'); } catch (e) { console.error('Cache warmup error:', e.message); }
