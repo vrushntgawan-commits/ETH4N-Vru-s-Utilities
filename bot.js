@@ -268,20 +268,15 @@ async function handleSpamCheck(msg) {
 client.once('ready', async () => {
   console.log(`✅ Bot online: ${client.user.tag}`);
   if (!GUILD_ID || !JSONBIN_KEY) { console.error('FATAL: missing env vars'); process.exit(1); }
-
   try {
-    if (GUILD_ID) {
-      const guild = await client.guilds.fetch(GUILD_ID);
-      await guild.commands.set(slashDefs);
-      console.log(`✅ Registered ${slashDefs.length} guild slash commands to ${GUILD_ID}`);
-    } else {
-      await client.application.commands.set(slashDefs);
-      console.log(`✅ Registered ${slashDefs.length} global slash commands`);
-    }
+    const guild = await client.guilds.fetch(GUILD_ID);
+    const setRes = await guild.commands.set(slashDefs);
+    console.log(`✅ Registered ${setRes.size} guild slash commands to ${GUILD_ID}`);
+    const fetched = await guild.commands.fetch();
+    console.log('→ Commands fetched:', fetched.map(c => `${c.name} (${c.id})`).join(', '));
   } catch (e) {
     console.error('Slash command registration failed:', e);
   }
-
   try { await dbRead('users'); console.log('✅ Cache warmed'); } catch (e) { console.error('Cache warmup error:', e.message); }
   await updateStockEmbed(client);
   console.log('✅ Ready');
