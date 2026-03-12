@@ -6,12 +6,10 @@ const {
   SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits,
   ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder, MessageFlags
 } = require('discord.js');
-const fetch = require('node-fetch');
+let fetch;
+try { fetch = require('node-fetch'); if (fetch && fetch.default) fetch = fetch.default; } catch (e) { fetch = global.fetch; }
 require('dotenv').config();
 
-// ══════════════════════════════════════════
-//  SAFE FETCH (retry on 429 / network errors)
-// ══════════════════════════════════════════
 async function safeFetch(url, options = {}, retries = 3) {
   try {
     const res = await fetch(url, options);
@@ -29,9 +27,6 @@ async function safeFetch(url, options = {}, retries = 3) {
   }
 }
 
-// ══════════════════════════════════════════
-//  CONFIG
-// ══════════════════════════════════════════
 const STOCK_CHANNEL_ID = '1481026325178220565';
 const VOUCH_CHANNEL_ID = '1481321672970735807';
 const ALERT_CHANNEL_ID = '1480833457604268154';
@@ -41,18 +36,12 @@ const BOT_TOKEN        =  process.env.BOT_TOKEN;
 const COIN_EMOJI       = '<:CoinEmoji:1481246827448766526>';
 const PREFIX           = 'u!';
 
-// ══════════════════════════════════════════
-//  CODES
-// ══════════════════════════════════════════
 const CODES = {
   'RELEASE': { coins: 25, description: '🎉 Launch reward' },
 };
 
 const pendingVouches = new Map();
 
-// ══════════════════════════════════════════
-//  SHOP
-// ══════════════════════════════════════════
 const SHOP = [
   { id: 'robux_25',   name: '25 Robux',   cost: 100,  category: 'Robux', robuxAmt: 25  },
   { id: 'robux_50',   name: '50 Robux',   cost: 200,  category: 'Robux', robuxAmt: 50  },
@@ -68,9 +57,6 @@ const SHOP = [
   { id: 'etfb_div',   name: 'Divine',     cost: 250,  category: 'ETFB',  robuxAmt: 0   },
 ];
 
-// ══════════════════════════════════════════
-//  JSONBIN
-// ══════════════════════════════════════════
 const BIN_IDS = {
   users:  '69b13ea5c3097a1dd516fe70',
   store:  '69b13e7dc3097a1dd516fdc5',
@@ -123,9 +109,6 @@ async function dbWrite(name, data) {
   await binWrite(name, data);
 }
 
-// ══════════════════════════════════════════
-//  DB HELPERS
-// ══════════════════════════════════════════
 async function getUser(userId, username) {
   const users = await dbRead('users');
   if (!users[userId]) {
@@ -158,14 +141,10 @@ async function nextClaimId() {
   return `C${meta.claimCounter}`;
 }
 
-// ══════════════════════════════════════════
-//  UTIL
-// ══════════════════════════════════════════
 function fmt(ms) {
   const s = Math.floor(ms/1000), m = Math.floor(s/60), h = Math.floor(m/60);
   return h > 0 ? `${h}h ${m%60}m` : m > 0 ? `${m}m ${s%60}s` : `${s}s`;
 }
-function ts(unixMs, style = 'R') { return `<t:${Math.floor(unixMs/1000)}:${style}>`; }
 function errEmbed(text) { return new EmbedBuilder().setColor(0xED4245).setDescription(`❌ ${text}`); }
 function okEmbed(text)  { return new EmbedBuilder().setColor(0x57F287).setDescription(`✅ ${text}`); }
 
@@ -198,9 +177,6 @@ async function updateStockEmbed(clientRef) {
   } catch (e) { console.error('Stock embed error:', e.message); }
 }
 
-// ══════════════════════════════════════════
-//  SLASH COMMAND DEFINITIONS
-// ══════════════════════════════════════════
 const { SlashCommandBuilder: SCB, PermissionFlagsBits: PFB } = require('discord.js');
 const slashDefs = [
   new SCB().setName('balance').setDescription('Check your coin balance').addUserOption(o=>o.setName('user').setDescription('Check someone else').setRequired(false)),
@@ -232,9 +208,6 @@ const slashDefs = [
   new SCB().setName('check-inventory').setDescription('[ADMIN] View any user inventory').setDefaultMemberPermissions(PFB.Administrator).addUserOption(o=>o.setName('user').setDescription('Target user').setRequired(true)),
 ].map(c => c.toJSON());
 
-// ══════════════════════════════════════════
-//  COIN FLUSH (batched write)
-// ══════════════════════════════════════════
 let coinWriteTimer = null;
 function scheduleCoinFlush() {
   if (coinWriteTimer) return;
@@ -246,9 +219,6 @@ function scheduleCoinFlush() {
   }, 5000);
 }
 
-// ══════════════════════════════════════════
-//  CLIENT
-// ══════════════════════════════════════════
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -259,10 +229,6 @@ const client = new Client({
   ],
 });
 
-// ══════════════════════════════════════════
-//  SPAM DETECTION
-//  5 consecutive messages in a channel = penalty
-// ══════════════════════════════════════════
 const channelLastMsg = new Map();
 const spamCooldown   = new Set();
 
@@ -299,23 +265,22 @@ async function handleSpamCheck(msg) {
   }
 }
 
-// ══════════════════════════════════════════
-//  READY
-// ══════════════════════════════════════════
 client.once('ready', async () => {
   console.log(`✅ Bot online: ${client.user.tag}`);
   if (!GUILD_ID || !JSONBIN_KEY) { console.error('FATAL: missing env vars'); process.exit(1); }
 
-  // Register slash commands (requires CLIENT_ID env var = your bot Application ID)
   const CLIENT_ID = (process.env.CLIENT_ID || '').trim();
   if (!CLIENT_ID) {
     console.warn('⚠️  CLIENT_ID not set — skipping slash command registration');
   } else {
     try {
-      const { REST, Routes } = require('discord.js');
-      const rest = new REST({ version: '10' }).setToken(BOT_TOKEN);
-      const data = await rest.put(Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID), { body: slashDefs });
-      console.log(`✅ Registered ${data.length} slash commands`);
+      if (GUILD_ID) {
+        await client.application.commands.set(slashDefs, GUILD_ID);
+        console.log(`✅ Registered ${slashDefs.length} guild slash commands`);
+      } else {
+        await client.application.commands.set(slashDefs);
+        console.log(`✅ Registered ${slashDefs.length} global slash commands`);
+      }
     } catch (e) {
       console.error('Slash command registration failed:', e.message);
     }
@@ -326,13 +291,9 @@ client.once('ready', async () => {
   console.log('✅ Ready');
 });
 
-// ══════════════════════════════════════════
-//  MESSAGE — 1 coin per message + prefix cmds
-// ══════════════════════════════════════════
 client.on('messageCreate', async msg => {
   if (msg.author.bot || !msg.guild) return;
 
-  // Vouch listener
   if (msg.channel.id === VOUCH_CHANNEL_ID && pendingVouches.has(msg.author.id)) {
     if (/^vouch\s+@\S+\s+.+/i.test(msg.content)) {
       const data = pendingVouches.get(msg.author.id);
@@ -342,10 +303,8 @@ client.on('messageCreate', async msg => {
     }
   }
 
-  // Spam check
   await handleSpamCheck(msg);
 
-  // Coin tracking
   const uid = msg.author.id;
   if (!cache.users) { try { await dbRead('users'); } catch {} }
   if (cache.users) {
@@ -364,7 +323,6 @@ client.on('messageCreate', async msg => {
     }).catch(() => {});
   }
 
-  // Prefix commands
   if (!msg.content.startsWith(PREFIX)) return;
   const args    = msg.content.slice(PREFIX.length).trim().split(/\s+/);
   const cmd     = args.shift().toLowerCase();
@@ -411,9 +369,6 @@ client.on('messageCreate', async msg => {
   }
 });
 
-// ══════════════════════════════════════════
-//  COMMAND FUNCTIONS
-// ══════════════════════════════════════════
 async function cmdBalance(reply, target) {
   const u = await getUser(target.id, target.username);
   return reply({ embeds: [new EmbedBuilder()
@@ -426,18 +381,18 @@ async function cmdBalance(reply, target) {
 async function cmdDaily(reply, userId, username) {
   const u = await getUser(userId, username);
   const cd = 24*60*60*1000, now = Date.now();
-  if (u.lastDaily && now - u.lastDaily < cd)
-    return reply({ embeds: [errEmbed(`Next daily ready ${ts(u.lastDaily+cd)} (${ts(u.lastDaily+cd,'T')})`)] });
-  const earned = Math.floor(Math.random()*6) + 10; // 10–15
+  if (u.lastDaily && now - u.lastDaily < cd) {
+    const nextTs = u.lastDaily + cd;
+    return reply({ embeds: [errEmbed(`Next daily ready ${new Date(nextTs).toLocaleString()} (${fmt(nextTs - now)} from now)`)] });
+  }
+  const earned = Math.floor(Math.random()*6) + 10;
   u.coins += earned; u.totalEarned = (u.totalEarned||0)+earned; u.lastDaily = now;
   await saveUser(u);
-  const next = now + cd;
   return reply({ embeds: [new EmbedBuilder()
     .setColor(0x57F287)
     .setTitle('🎁 Daily Claimed!')
     .setDescription(`You received **${earned}** ${COIN_EMOJI}!\nBalance: **${u.coins.toLocaleString()}** ${COIN_EMOJI}`)
-    .setFooter({ text: 'Next daily available' })
-    .setTimestamp(next)] });
+    .setFooter({ text: `Next daily available in ${fmt(cd)}` })] });
 }
 
 async function cmdUseCode(reply, userId, username, codeInput) {
@@ -557,7 +512,7 @@ async function cmdRain(msgOrInteraction, guild, senderId, senderName, amount) {
   const rainEmbed = new EmbedBuilder()
     .setColor(0x3498DB)
     .setTitle('🌧️ Coin Rain — React to Enter!')
-    .setDescription(`<@${senderId}> is raining **${amount}** ${COIN_EMOJI}!\n\nReact with 🌧️ to enter!\nCoins split equally.\n\n⏰ Ends ${ts(endsAt)} (${ts(endsAt,'T')} your time)`);
+    .setDescription(`<@${senderId}> is raining **${amount}** ${COIN_EMOJI}!\n\nReact with 🌧️ to enter!\nCoins split equally.\n\nEnds in ${fmt(endsAt - Date.now())}`);
   let rainMsg;
   if (isInt) { await msgOrInteraction.editReply({ embeds: [rainEmbed] }); rainMsg = await msgOrInteraction.fetchReply(); }
   else rainMsg = await msgOrInteraction.reply({ embeds: [rainEmbed] });
@@ -597,12 +552,8 @@ async function cmdRain(msgOrInteraction, guild, senderId, senderName, amount) {
   }, 2*60*1000);
 }
 
-// ══════════════════════════════════════════
-//  INTERACTION HANDLER
-// ══════════════════════════════════════════
 client.on('interactionCreate', async interaction => {
 
-  // ── MODAL SUBMIT ──
   if (interaction.isModalSubmit()) {
     if (!interaction.customId.startsWith('claim_modal_')) return;
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
@@ -666,7 +617,6 @@ client.on('interactionCreate', async interaction => {
       return await cmdRedeem(p => interaction.editReply(p), me.id, me.username, interaction.options.getString('item'));
     }
 
-    // /claim — show modal
     if (cmd === 'claim') {
       const idArg = interaction.options.getString('id').toUpperCase();
       const u     = await getUser(me.id, me.username);
@@ -687,7 +637,6 @@ client.on('interactionCreate', async interaction => {
       return interaction.showModal(modal);
     }
 
-    // /claims
     if (cmd === 'claims') {
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       const allClaims = await getClaims();
@@ -695,7 +644,7 @@ client.on('interactionCreate', async interaction => {
       if (!pending.length) return interaction.editReply({ embeds: [new EmbedBuilder().setColor(0x57F287).setDescription('✅ No pending claims!')] });
       const fields = pending.map(c => ({
         name:  `${c.claimId} — ${c.itemName}`,
-        value: `👤 **${c.username}** · Roblox: \`${c.robloxUsername}\`\n${c.gamepassLink ? `🔗 ${c.gamepassLink}\n` : ''}📅 ${ts(c.claimedAt,'R')}`,
+        value: `👤 **${c.username}** · Roblox: \`${c.robloxUsername}\`\n${c.gamepassLink ? `🔗 ${c.gamepassLink}\n` : ''}📅 ${new Date(c.claimedAt).toLocaleString()}`,
         inline: false,
       }));
       const chunks = [];
@@ -712,7 +661,6 @@ client.on('interactionCreate', async interaction => {
       return;
     }
 
-    // /claimed
     if (cmd === 'claimed') {
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       const claimId   = interaction.options.getString('id').toUpperCase();
@@ -742,7 +690,6 @@ client.on('interactionCreate', async interaction => {
           )] });
         dmSent = true;
       } catch {}
-      // Public channel notification
       try {
         await interaction.channel.send({ embeds: [new EmbedBuilder()
           .setColor(0x57F287)
@@ -752,7 +699,6 @@ client.on('interactionCreate', async interaction => {
             (claim.category === 'Robux' ? 'Check your Roblox gamepass!' : 'Accept the friend request from **vru4447** on Roblox!')
           )] });
       } catch {}
-      // Vouch request
       try {
         const vch = await client.channels.fetch(VOUCH_CHANNEL_ID);
         if (vch) {
@@ -799,7 +745,6 @@ client.on('interactionCreate', async interaction => {
         )] });
     }
 
-    // /deny-claim
     if (cmd === 'deny-claim') {
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       const claimId   = interaction.options.getString('id').toUpperCase();
@@ -892,7 +837,7 @@ client.on('interactionCreate', async interaction => {
   }
 });
 
-// Heartbeat log every 5 min so host doesn't think it's dead
 setInterval(() => console.log('Heartbeat:', new Date().toISOString()), 300_000);
 
+if (!BOT_TOKEN) { console.error('FATAL: BOT_TOKEN not set'); process.exit(1); }
 client.login(BOT_TOKEN);
