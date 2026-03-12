@@ -302,7 +302,7 @@ async function handleSpamCheck(msg) {
 // ══════════════════════════════════════════
 //  READY
 // ══════════════════════════════════════════
-client.once('clientReady', async () => {
+client.once('ready', async () => {
   console.log(`✅ Bot online: ${client.user.tag}`);
   if (!GUILD_ID || !JSONBIN_KEY) { console.error('FATAL: missing env vars'); process.exit(1); }
 
