@@ -268,9 +268,25 @@ async function handleSpamCheck(msg) {
 // ══════════════════════════════════════════
 //  READY
 // ══════════════════════════════════════════
-client.once('ready', async () => {
+client.once('clientReady', async () => {
   console.log(`✅ Bot online: ${client.user.tag}`);
   if (!GUILD_ID || !JSONBIN_KEY) { console.error('FATAL: missing env vars'); process.exit(1); }
+
+  // Register slash commands (requires CLIENT_ID env var = your bot Application ID)
+  const CLIENT_ID = (process.env.CLIENT_ID || '').trim();
+  if (!CLIENT_ID) {
+    console.warn('⚠️  CLIENT_ID not set — skipping slash command registration');
+  } else {
+    try {
+      const { REST, Routes } = require('discord.js');
+      const rest = new REST({ version: '10' }).setToken(BOT_TOKEN);
+      const data = await rest.put(Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID), { body: slashDefs });
+      console.log(`✅ Registered ${data.length} slash commands`);
+    } catch (e) {
+      console.error('Slash command registration failed:', e.message);
+    }
+  }
+
   try { await dbRead('users'); console.log('✅ Cache warmed'); } catch (e) { console.error('Cache warmup error:', e.message); }
   await updateStockEmbed(client);
   console.log('✅ Ready');
